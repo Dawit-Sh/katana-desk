@@ -30,9 +30,13 @@ jobs:
 
       - name: Linux packages (WebKitGTK and friends)
         if: runner.os == 'Linux'
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf build-essential
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o DPkg::Lock::Timeout=300"
+          sudo -E apt-get $APT update
+          sudo -E apt-get $APT install -y --no-install-recommends             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential file
 
       - uses: actions/setup-node@v4
         with:

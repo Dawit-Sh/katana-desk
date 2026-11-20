@@ -832,6 +832,19 @@ pub fn run() {
             lists::list_add,
             lists::list_remove
         ])
-        .run(tauri::generate_context!())
+        .run(context())
         .expect("error while running Katana Desk");
+}
+
+/// The app's context. For update tests, KATANA_UPDATE_URL points the updater at another latest.json
+/// (plain http allowed, for a local server); normal runs use the GitHub releases from tauri.conf.json.
+fn context() -> tauri::Context<tauri::Wry> {
+    let mut ctx = tauri::generate_context!();
+    if let Ok(url) = std::env::var("KATANA_UPDATE_URL") {
+        if let Some(up) = ctx.config_mut().plugins.0.get_mut("updater").and_then(|v| v.as_object_mut()) {
+            up.insert("endpoints".into(), serde_json::json!([url]));
+            up.insert("dangerousInsecureTransportProtocol".into(), serde_json::json!(true));
+        }
+    }
+    ctx
 }

@@ -46,7 +46,9 @@ export async function checkForUpdate(quiet = false): Promise<void> {
     if (found) set({ phase: "found", version: found.version, notes: found.body ?? "", checkedAt: now });
     else set({ phase: quiet && st !== "idle" ? st : "none", checkedAt: now });
   } catch (e) {
-    if (!quiet) set({ phase: "error", error: String(e) });
+    // GitHub answers 404 until a release with latest.json is published: nothing newer to offer
+    if (/valid release JSON/i.test(String(e))) set({ phase: quiet && st !== "idle" ? st : "none", checkedAt: Date.now() });
+    else if (!quiet) set({ phase: "error", error: String(e) });
   }
 }
 
