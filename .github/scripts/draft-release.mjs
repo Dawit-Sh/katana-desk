@@ -16,7 +16,11 @@ if (all.some((r) => r.tag_name === tag && !r.draft)) {
 }
 
 const body = readFileSync(".github/release-notes.md", "utf8").replaceAll("__VERSION__", version);
-let rel = all.find((r) => r.tag_name === tag && r.draft);
+// GitHub renames an older draft's tag to "untagged-..." once another draft claims it, so a draft is
+// found by its name too (the newest one)
+let rel = all
+  .filter((r) => r.draft && (r.tag_name === tag || r.name === `Katana Desk ${version}`))
+  .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 if (rel) {
   for (const a of rel.assets) await gh("DELETE", `repos/${repo}/releases/assets/${a.id}`);
   rel = await gh("PATCH", `repos/${repo}/releases/${rel.id}`, { target_commitish: process.env.GITHUB_SHA, body });
