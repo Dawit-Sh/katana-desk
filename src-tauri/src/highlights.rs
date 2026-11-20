@@ -123,10 +123,12 @@ fn clean_note(n: Option<&str>) -> Option<String> {
 }
 
 pub fn add(conn: &Connection, h: &NewHighlight) -> rusqlite::Result<Highlight> {
-    // the same words again (a second click on a dot, say) are one highlight: it takes the new look
+    // the same words again (a second click on a dot, say) are one highlight: it takes the new look. Only
+    // within the current read: the same passage marked on a reread is a new highlight of that read
     if let Some(id) = conn
         .query_row(
-            "SELECT id FROM highlights WHERE book_id = ?1 AND cfi = ?2 AND deleted_at IS NULL",
+            "SELECT id FROM highlights WHERE book_id = ?1 AND cfi = ?2 AND deleted_at IS NULL
+                AND read_n = COALESCE((SELECT MAX(n) FROM book_reads WHERE book_id = ?1), 1)",
             params![h.book_id, h.cfi],
             |r| r.get::<_, i64>(0),
         )
@@ -408,7 +410,21 @@ mod tests {
         .unwrap();
         c.execute_batch(crate::marks::SCHEMA_V3).unwrap();
         c.execute_batch(SCHEMA_V4).unwrap();
+        c.execute_batch(crate::grimmory::pdf_annots::SCHEMA_V8).unwrap();
+        c.execute_batch(crate::reads::SCHEMA_V9).unwrap();
         c
+    }
+
+    #[test]
+    fn a_reread_marks_the_same_words_again() {
+        let c = db();
+        let a = add(&c, &hl("epubcfi(/6/4!/4/2,/1:0,/1:5)")).unwrap();
+        assert_eq!(add(&c, &hl("epubcfi(/6/4!/4/2,/1:0,/1:5)")).unwrap().id, a.id);
+        crate::reads::start(&c, 1).unwrap();
+        let b = add(&c, &hl("epubcfi(/6/4!/4/2,/1:0,/1:5)")).unwrap();
+        assert_ne!(b.id, a.id);
+        let r = crate::reads::reads(&c, 1).unwrap();
+        assert_eq!((r.hl[&a.id], r.hl[&b.id]), (1, 2));
     }
 
     fn hl<'a>(cfi: &'a str) -> NewHighlight<'a> {

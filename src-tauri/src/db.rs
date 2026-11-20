@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS list_books (
 );
 ";
 
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 10;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -259,6 +259,14 @@ impl Db {
         if version < 8 {
             // PDF drawings and Grimmory's copies of PDF annotations; a PDF highlight's word boxes, additive only
             conn.execute_batch(crate::grimmory::pdf_annots::SCHEMA_V8)?;
+        }
+        if version < 9 {
+            // reads: each time through a book keeps its own marks, all earlier ones read 1, additive only
+            conn.execute_batch(crate::reads::SCHEMA_V9)?;
+        }
+        if version < 10 {
+            // a reading status for books only on this PC (Grimmory books keep theirs on Grimmory), additive only
+            conn.execute_batch("ALTER TABLE books ADD COLUMN read_status TEXT;")?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))

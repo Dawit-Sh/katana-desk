@@ -3,8 +3,15 @@
 // filters them all. A mark opens the book there; Export saves a book's marks as Markdown.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { api } from "../lib/api";
+import { ReadsDiff, type Reads } from "./ReadsDiff";
 import { Cover } from "../components/Cover";
 import { m7, type Book } from "../lib/api";
+const readsApi = {
+  get: (bookId: number) => invoke<Reads>("book_reads", { bookId }),
+  start: (bookId: number) => invoke<number>("book_new_read", { bookId }),
+};
 import { plural } from "../lib/format";
 import { useStore } from "../lib/store";
 import { MarkRows, Tabs, allMarks, inTab, logRevisit, matches, type Mark, type Tab } from "../reader/marklist";
@@ -24,7 +31,7 @@ const syncWords: Record<MarksSync, string> = {
   format: "on this PC (this format doesn't sync)",
 };
 
-type Data = { hl: Highlight[]; bm: Bookmark[]; sync: MarksSync | null };
+type Data = { hl: Highlight[]; bm: Bookmark[]; sync: MarksSync | null; reads: Reads | null };
 
 export function BookmarksPage() {
   const open = useStore((s) => s.open);
@@ -34,13 +41,30 @@ export function BookmarksPage() {
   const [hits, setHits] = useState<Set<number> | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [msg, setMsg] = useState<{ id: number; text: string } | null>(null);
+  // folded books (kept), the read each book shows (0: every read), the book being compared
+  const [folded, setFolded] = useState<Set<number>>(new Set());
+  const [readOf, setReadOf] = useState<Record<number, number>>({});
+  const [diffFor, setDiffFor] = useState<number | null>(null);
+  useEffect(() => {
+    api.getSetting("bookmarks.folded").then((v) => v && setFolded(new Set(JSON.parse(v) as number[]))).catch(() => {});
+  }, []);
+  const fold = (id: number) =>
+    setFolded((f) => {
+      const n = new Set(f);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      api.setSetting("bookmarks.folded", JSON.stringify([...n])).catch(() => {});
+      return n;
+    });
   const needle = q.trim().toLowerCase();
   const loaded = useRef(new Set<number>());
 
   const loadOne = useCallback(async (id: number) => {
     loaded.current.add(id);
-    const [h, b, st] = await Promise.all([hls.list(id), bms.list(id), marksApi.syncState(id)]).catch(() => [[], [], null] as const);
-    setData((d) => ({ ...d, [id]: { hl: h as Highlight[], bm: b as Bookmark[], sync: st as MarksSync | null } }));
+    const [h, b, st, rd] = await Promise.all([hls.list(id), bms.list(id), marksApi.syncState(id), readsApi.get(id).catch(() => null)]).catch(
+      () => [[], [], null, null] as const,
+    );
+    setData((d) => ({ ...d, [id]: { hl: h as Highlight[], bm: b as Bookmark[], sync: st as MarksSync | null, reads: rd as Reads | null } }));
   }, []);
   const loadAll = useCallback(async () => {
     const list = await marksApi.books().catch(() => [] as MarkedBook[]);
@@ -81,11 +105,13 @@ export function BookmarksPage() {
           const d = data[b.id];
           const all = d ? allMarks(d.hl, d.bm) : [];
           const titleHit = !!needle && `${b.title} ${b.author ?? ""}`.toLowerCase().includes(needle);
-          const shown = all.filter((m) => inTab(m, tab) && (titleHit || matches(m, needle)));
+          const rn = readOf[b.id] ?? 0;
+          const inRead = (m: Mark) => !rn || !d?.reads || (m.kind === "hl" ? d.reads.hl[m.h.id] ?? 1 : d.reads.bm[m.b.id] ?? 1) === rn;
+          const shown = all.filter((m) => inTab(m, tab) && inRead(m) && (titleHit || matches(m, needle)));
           return { b, d, shown };
         })
-        .filter((x) => !x.d || x.shown.length > 0),
-    [books, hits, data, tab, needle],
+        .filter((x) => !x.d || x.shown.length > 0 || (readOf[x.b.id] ?? 0) > 0),
+    [books, hits, data, tab, needle, readOf],
   );
   const totals = useMemo(() => {
     let hl = 0;
@@ -156,8 +182,18 @@ export function BookmarksPage() {
       </div>
       {books && !sections.length && <div className="bmmsg">{nothing}</div>}
       {sections.map(({ b, d, shown }) => (
-        <section key={b.id} className="bmsec" aria-label={b.title}>
+        <section key={b.id} className={`bmsec ${folded.has(b.id) ? "folded" : ""}`} aria-label={b.title}>
           <div className="bmhead">
+            <button
+              type="button"
+              className="ib fold"
+              aria-expanded={!folded.has(b.id)}
+              aria-label={folded.has(b.id) ? `Show ${b.title}'s marks` : `Fold ${b.title}'s marks`}
+              title={folded.has(b.id) ? "Show the marks" : "Fold"}
+              onClick={() => fold(b.id)}
+            >
+              <i className="ms">{folded.has(b.id) ? "chevron_right" : "expand_more"}</i>
+            </button>
             <Cover book={asBook(b)} size="m" progress={false} />
             <div className="rct">
               <span className="ti">{b.title}</span>
@@ -174,7 +210,48 @@ export function BookmarksPage() {
               <i className="ms">download</i>Export
             </button>
           </div>
-          {d ? (
+          {!folded.has(b.id) && d?.reads && (
+            <div className="readbar">
+              {d.reads.reads.length > 1 && (
+                <span className="seg" role="radiogroup" aria-label="Which read">
+                  {[0, ...d.reads.reads.map((r) => r.n)].map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      role="radio"
+                      aria-checked={(readOf[b.id] ?? 0) === n}
+                      className={(readOf[b.id] ?? 0) === n ? "on" : ""}
+                      onClick={() => setReadOf((r) => ({ ...r, [b.id]: n }))}
+                      title={n ? `The marks of read ${n}` : "The marks of every read"}
+                    >
+                      {n ? `Read ${n}` : "Every read"}
+                    </button>
+                  ))}
+                </span>
+              )}
+              {d.reads.reads.length > 1 && (
+                <button type="button" className="pill tone" onClick={() => setDiffFor(b.id)} title="Two reads side by side: what stood out each time">
+                  <i className="ms">compare</i>Compare reads
+                </button>
+              )}
+              <button
+                type="button"
+                className="pill ghost"
+                title={`Marks made from now on go to read ${d.reads.current + 1}, so this read's stay as they are`}
+                onClick={async () => {
+                  const n = await readsApi.start(b.id).catch(() => null);
+                  if (n) setMsg({ id: b.id, text: n > d.reads!.current ? `Read ${n} started: new marks go there` : `Read ${n} has no marks yet, so it's still the current read` });
+                  setTimeout(() => setMsg(null), 3500);
+                  loadOne(b.id);
+                }}
+              >
+                <i className="ms">replay</i>New read
+              </button>
+              <small className="readnow">New marks go to read {d.reads.current}</small>
+            </div>
+          )}
+          {folded.has(b.id) ? null : d ? (
+            <div className="bmscroll">
             <MarkRows
               marks={shown}
               onGo={(m, ctrl) => {
@@ -186,11 +263,21 @@ export function BookmarksPage() {
               onSaveBookmark={(bk, t, n) => onSaveBookmark(b.id, bk, t, n)}
               empty={`No ${tab === "all" ? "marks" : tab} in this book.`}
             />
+            </div>
           ) : (
             <div className="bmmsg">Loading…</div>
           )}
         </section>
       ))}
+      {diffFor != null && data[diffFor]?.reads && (
+        <ReadsDiff
+          title={books?.find((x) => x.id === diffFor)?.title ?? ""}
+          reads={data[diffFor].reads!}
+          hl={data[diffFor].hl}
+          bm={data[diffFor].bm}
+          onClose={() => setDiffFor(null)}
+        />
+      )}
     </div>
   );
 }

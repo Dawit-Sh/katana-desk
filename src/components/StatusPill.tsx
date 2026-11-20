@@ -1,7 +1,8 @@
 // A book's reading status, as Grimmory keeps it, and Reset progress: a pill on the book's page that opens a
 // menu. A status or a reset made here goes to Grimmory at once (and a reset clears the place here too).
-// A book only on this PC has no status to keep, just Reset progress.
+// A book only on this PC keeps its status here, with the same menu.
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { grimmory } from "../lib/api";
 import { useStore } from "../lib/store";
 
@@ -18,7 +19,7 @@ export const STATUSES: { id: string; name: string; icon: string }[] = [
 
 export const statusName = (s: string | null | undefined) => STATUSES.find((x) => x.id === s);
 
-export function StatusPill({ gid, status, localId, started }: { gid: number | null; status: string | null; localId: number | null; started: boolean }) {
+export function StatusPill({ gid, status, localId }: { gid: number | null; status: string | null; localId: number | null; started?: boolean }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -26,6 +27,10 @@ export function StatusPill({ gid, status, localId, started }: { gid: number | nu
   const [now, setNow] = useState(status);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => setNow(status), [status]);
+  // a book only on this PC: its status is kept here
+  useEffect(() => {
+    if (gid == null && localId != null) invoke<string | null>("book_status", { id: localId }).then(setNow).catch(() => {});
+  }, [gid, localId]);
   useEffect(() => {
     if (!open) return;
     const off = (e: MouseEvent) => {
@@ -48,7 +53,7 @@ export function StatusPill({ gid, status, localId, started }: { gid: number | nu
       window.removeEventListener("keydown", esc, true);
     };
   }, [open]);
-  if (gid == null && !started) return null;
+  if (gid == null && localId == null) return null;
 
   const done = async (p: Promise<unknown>) => {
     setBusy(true);
@@ -71,22 +76,40 @@ export function StatusPill({ gid, status, localId, started }: { gid: number | nu
 
   return (
     <div className="stwrap" ref={ref}>
-      <button type="button" className="pill stpill" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} title={gid != null ? "Reading status, as on Grimmory" : "Reset progress"}>
-        <i className="ms">{gid != null ? cur?.icon ?? "bookmark_manager" : "restart_alt"}</i>
-        {gid != null ? cur?.name ?? "Set a status" : "Reset progress"}
+      <button
+        type="button"
+        className="pill stpill"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        title={gid != null ? "Reading status, as on Grimmory" : "Reading status, kept on this PC"}
+      >
+        <i className="ms">{cur?.icon ?? "bookmark_manager"}</i>
+        {cur?.name ?? "Set a status"}
         <i className="ms chev">expand_more</i>
       </button>
       {open && (
         <div className="menu stmenu" role="menu">
-          {gid != null &&
-            STATUSES.map((s) => (
-              <button type="button" role="menuitemradio" aria-checked={now === s.id} key={s.id} disabled={busy} onClick={() => done(grimmory.setStatus(gid, s.id))}>
+          {STATUSES.map((s) => (
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={now === s.id}
+                key={s.id}
+                disabled={busy}
+                onClick={() => {
+                  if (gid == null) return done(invoke<string>("book_set_status", { id: localId, status: s.id }));
+                  // re-reading: the marks from here on go to a new read (Bookmarks › Compare reads)
+                  if (s.id === "RE_READING" && localId != null) invoke("book_new_read", { bookId: localId }).catch(() => {});
+                  done(grimmory.setStatus(gid, s.id));
+                }}
+              >
                 <i className="ms">{s.icon}</i>
                 <span>{s.name}</span>
                 {now === s.id && <i className="ms tick">check</i>}
               </button>
             ))}
-          {gid != null && <hr />}
+          <hr />
           {!confirm ? (
             <button type="button" role="menuitem" disabled={busy} onClick={() => setConfirm(true)}>
               <i className="ms">restart_alt</i>

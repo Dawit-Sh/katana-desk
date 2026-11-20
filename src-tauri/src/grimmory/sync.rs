@@ -243,7 +243,7 @@ fn apply(app: &AppHandle, id: i64, p: &ServerPlace, use_cfi: bool) {
 }
 
 /// Unread here too: no place, not in Continue reading, not finished.
-fn clear(app: &AppHandle, id: i64) {
+pub fn clear(app: &AppHandle, id: i64) {
     {
         let conn = conn_of(app);
         let _ = conn.execute(

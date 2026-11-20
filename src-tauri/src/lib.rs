@@ -12,6 +12,7 @@ mod lists;
 mod marks;
 mod meta;
 mod pages;
+mod reads;
 mod resumable;
 mod search;
 mod words;
@@ -835,6 +836,11 @@ pub fn run() {
             covers::openlibrary_cover,
             lists::lists,
             lists::list_create,
+            reads::book_reads,
+            reads::book_new_read,
+            reads::mark_move_read,
+            reads::book_status,
+            reads::book_set_status,
             lists::list_rename,
             lists::list_delete,
             lists::list_restore,

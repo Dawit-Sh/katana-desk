@@ -336,3 +336,49 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .bmtop .sfield { width: min(420px, 100%) }
 .bmsec { display: flex; flex-direction: column; gap: 10px; padding-top: 20px; border-top: 1px solid color-mix(in srgb, var(--k-outv) 55%, transparent) }
 .bmtop + .bmsec { border-top: 0; padding-top: 4px }
+
+/* Bookmarks: folding a book, its marks in their own scrolling box, its reads */
+.bmhead .fold { width: 36px; height: 36px; flex: none; margin-left: -6px }
+.bmsec.folded { gap: 0 }
+.bmscroll { max-height: min(460px, 60vh); overflow-y: auto; padding-right: 8px; scrollbar-width: thin; scrollbar-color: var(--k-outv) transparent; border-radius: 12px }
+.readbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap }
+.readbar .seg > button { height: 30px; padding: 0 12px; font-size: 13px }
+.readbar .pill { height: 32px; font-size: 13px }
+.pill.ghost { border-color: transparent; color: var(--k-var) }
+.pill.ghost:hover { color: var(--k-on) }
+.readnow { margin-left: auto; font-size: 12px; color: var(--k-var) }
+
+/* Compare reads: two reads side by side, like a diff */
+.diffwrap { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, .45); display: grid; place-items: center; padding: 32px }
+.diff { width: min(1280px, 100%); height: 100%; background: var(--k-bg); border-radius: 28px; box-shadow: 0 20px 60px rgba(0, 0, 0, .45); display: flex; flex-direction: column; overflow: hidden }
+.dhead { display: flex; align-items: center; gap: 16px; padding: 20px 20px 12px 28px }
+.dhead .rct { flex: 1; display: grid; gap: 4px; min-width: 0 }
+.dhead .ti { font: 500 22px var(--font-book) }
+.dhead .su { font-size: 13px; color: var(--k-var) }
+.dhead .minus { color: #e5737a; font-weight: 700 }
+.dhead .plus { color: #6cc788; font-weight: 700 }
+.dcols { display: grid; grid-template-columns: 28px 1fr 1fr; gap: 0 12px; padding: 0 28px 12px 0; border-bottom: 1px solid color-mix(in srgb, var(--k-outv) 60%, transparent) }
+.dcols .dside { display: grid; gap: 6px; justify-items: start }
+.dcols .dside.a { grid-column: 2 }
+.dcols small { font-size: 12px; color: var(--k-var) }
+.dcols .seg > button { height: 30px; padding: 0 12px; font-size: 13px }
+.dcols .seg > button:disabled { opacity: .35 }
+.drows { flex: 1; overflow-y: auto; padding: 8px 28px 28px 0; scrollbar-width: thin }
+.drow { display: grid; grid-template-columns: 28px 1fr 1fr; gap: 0 12px; align-items: stretch; margin: 6px 0 }
+.dsign { display: grid; place-items: center; font: 700 16px var(--font-ui); color: var(--k-var) }
+.drow.gone .dsign { color: #e5737a }
+.drow.added .dsign { color: #6cc788 }
+.dcell { display: flex; gap: 12px; padding: 12px 14px; border-radius: 14px; min-width: 0 }
+.dcell.empty { background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--k-outv) 22%, transparent) 7px 8px) }
+.drow.same .dcell { background: var(--k-sc) }
+.drow.gone .dcell.a { background: color-mix(in srgb, #e5737a 16%, var(--k-bg)) }
+.drow.added .dcell.b { background: color-mix(in srgb, #6cc788 16%, var(--k-bg)) }
+.dbar { width: 4px; border-radius: 2px; flex: none; align-self: stretch }
+.dbar.bm { background: #e0a43a }
+.dcell > div { min-width: 0; display: grid; gap: 4px }
+.dtext { font: 400 15px/1.5 var(--font-book); user-select: text; overflow-wrap: anywhere }
+.dtext.ui { font: 500 14px var(--font-ui); display: flex; align-items: center; gap: 6px }
+.dtext.ui .ms { font-size: 18px; color: #e0a43a }
+.dnote { font-size: 13.5px; color: var(--k-on); user-select: text }
+.dmeta { font-size: 12px; color: var(--k-var) }
+.dempty { padding: 24px 28px }
