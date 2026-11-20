@@ -299,3 +299,17 @@
 /* a small ring for "working" (syncing, signing in, looking), in place of an icon */
 .spinner { display: inline-block; flex: none; width: 16px; height: 16px; margin: 1px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; animation: spin .75s linear infinite }
 .spinner.big { width: 40px; height: 40px; border-width: 3px }
+
+/* a book's reading status (as on Grimmory) and Reset progress, on its page */
+.stwrap { position: relative; margin-top: 6px; justify-self: start }
+.stpill { height: 30px; padding: 0 8px 0 10px; gap: 6px; font-size: 13px }
+.stpill .ms { font-size: 17px }
+.stpill .chev { margin-left: 2px; color: var(--k-var) }
+.stmenu { top: calc(100% + 6px); left: 0; min-width: 240px }
+.stmenu .tick { margin-left: auto; color: var(--k-pri) }
+.stmenu button[aria-checked="true"] { font-weight: 600 }
+.stmenu hr { border: 0; border-top: 1px solid color-mix(in srgb, var(--k-outv) 60%, transparent); margin: 4px 6px }
+.stconfirm { padding: 8px 10px; display: grid; gap: 10px; max-width: 280px }
+.stconfirm p { margin: 0; font-size: 13px; line-height: 1.45; color: var(--k-var) }
+.stconfirm .pills { justify-content: flex-end }
+.stmsg { padding: 6px 10px }

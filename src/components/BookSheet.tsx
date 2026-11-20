@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { StatusPill } from "./StatusPill";
 import { api, bookKey, grimmory, m7, READABLE, type Book } from "../lib/api";
 import { fmtAgo, fmtDate, fmtSize, fmtWhen } from "../lib/format";
 import { useStore } from "../lib/store";
@@ -17,6 +18,7 @@ export function BookSheet({ book }: { book: Book }) {
   const onLists = useStore((s) => s.lists.filter((l) => l.books.includes(bookKey(book))).length);
   // the same file on Grimmory? Then its place syncs with the Fire (checked by partial MD5, once)
   const signedIn = useStore((s) => !!s.g?.signedIn);
+  const gStatus = useStore((s) => (book.grimmoryId != null ? s.catalog.books.find((b) => b.id === book.grimmoryId)?.readStatus ?? null : null));
   const [gid, setGid] = useState<number | null>(book.grimmoryId);
   useEffect(() => {
     setGid(book.grimmoryId);
@@ -70,6 +72,7 @@ export function BookSheet({ book }: { book: Book }) {
               </span>
             </>
           )}
+          {readable && <StatusPill gid={signedIn ? gid : null} status={gStatus} localId={book.id} started={started} />}
         </div>
       </div>
       <div className="acts2">

@@ -530,6 +530,85 @@ pub async fn grimmory_keep_up(app: AppHandle, id: i64, follow: bool) -> Option<O
     Some(OpenPlace { location, fraction, offer: None, grimmory_id: gid })
 }
 
+/// Grimmory's reading statuses, as its web app sets them.
+pub const STATUSES: [&str; 8] = ["UNREAD", "READING", "RE_READING", "READ", "PARTIALLY_READ", "PAUSED", "WONT_READ", "ABANDONED"];
+
+fn local_ids(app: &AppHandle, gid: i64) -> Vec<i64> {
+    let conn = conn_of(app);
+    let mut st = match conn.prepare("SELECT id FROM books WHERE grimmory_id = ?1") {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    let rows = st.query_map([gid], |r| r.get(0));
+    rows.map(|r| r.flatten().collect()).unwrap_or_default()
+}
+
+/// The status Grimmory answered with (its first `readStatus`), or the one asked for.
+async fn status_answer(resp: reqwest::Response, asked: &str) -> GRes<String> {
+    let st = resp.status().as_u16();
+    let text = resp.text().await.unwrap_or_default();
+    if !(200..300).contains(&st) {
+        return Err(GErr::Server(st, super::server_message(&text)));
+    }
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+    Ok(v.get(0).and_then(|r| r.get("readStatus")).and_then(|s| s.as_str()).unwrap_or(asked).to_string())
+}
+
+/// Sets a book's reading status on Grimmory (Unread, Reading, Re-reading, Read, Partially read, Paused,
+/// Won't read, Abandoned), as its web app does. Unread clears the place here too, as one set there would.
+#[tauri::command]
+pub async fn grimmory_set_status(app: AppHandle, gid: i64, status: String) -> Result<String, String> {
+    if !STATUSES.contains(&status.as_str()) {
+        return Err(format!("{status} isn't a reading status"));
+    }
+    let body = serde_json::json!({ "bookIds": [gid], "status": status });
+    let resp = send(&app, move |c, base, tok| c.post(format!("{base}/api/v1/books/status")).bearer_auth(tok).json(&body))
+        .await
+        .map_err(String::from)?;
+    let now_status = status_answer(resp, &status).await.map_err(String::from)?;
+    let _ = conn_of(&app).execute("UPDATE gbooks SET read_status = ?2 WHERE id = ?1", params![gid, now_status]);
+    if now_status == "UNREAD" {
+        for id in local_ids(&app, gid) {
+            clear(&app, id);
+        }
+    }
+    let _ = app.emit("library-changed", ());
+    Ok(now_status)
+}
+
+/// Resets a book's progress on Grimmory (its readers' place and the KOReader one, as the web app's
+/// Reset progress does) and here: no place, not finished, out of Continue reading. Marks stay.
+#[tauri::command]
+pub async fn grimmory_reset_progress(app: AppHandle, gid: i64) -> Result<String, String> {
+    let mut status = "UNREAD".to_string();
+    for kind in ["BOOKLORE", "KOREADER"] {
+        let resp = send(&app, move |c, base, tok| {
+            c.post(format!("{base}/api/v1/books/reset-progress?type={kind}")).bearer_auth(tok).json(&serde_json::json!([gid]))
+        })
+        .await
+        .map_err(String::from)?;
+        let s = status_answer(resp, "UNREAD").await.map_err(String::from)?;
+        if kind == "BOOKLORE" {
+            status = s;
+        }
+    }
+    let _ = conn_of(&app).execute(
+        "UPDATE gbooks SET progress = NULL, last_read = NULL, read_status = ?2 WHERE id = ?1",
+        params![gid, status],
+    );
+    for id in local_ids(&app, gid) {
+        clear(&app, id);
+    }
+    let _ = app.emit("library-changed", ());
+    Ok(status)
+}
+
+/// A book that's only on this PC: its place goes, so it's unread here.
+#[tauri::command]
+pub fn book_reset_place(app: AppHandle, id: i64) {
+    clear(&app, id);
+}
+
 /// The book closed: its place goes up now.
 #[tauri::command]
 pub async fn grimmory_closed(app: AppHandle, id: i64) {

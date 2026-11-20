@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { StatusPill } from "./StatusPill";
 import { api, grimmory, gFormat, gReadable, m7, READABLE, type GBook } from "../lib/api";
 import { fmtAgo, fmtDate, fmtMb, fmtWhen } from "../lib/format";
 import { useStore } from "../lib/store";
@@ -120,6 +121,7 @@ export function GBookSheet({ book }: { book: GBook }) {
               </span>
             </>
           )}
+          <StatusPill gid={book.id} status={book.readStatus} localId={p.local?.id ?? null} started={started} />
         </div>
       </div>
       <div className="acts2">

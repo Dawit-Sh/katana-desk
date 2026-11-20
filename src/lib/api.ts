@@ -114,6 +114,12 @@ export const grimmory = {
   offer: (id: number) => invoke<Offer | null>("grimmory_offer", { id }),
   answer: (id: number, go: boolean) => invoke<OpenPlace>("grimmory_answer", { id, go }),
   /** While a book is open: Grimmory's place for it; `follow` moves there when nothing was read here since. */
+  /** a reading status on Grimmory (UNREAD, READING, RE_READING, READ, PARTIALLY_READ, PAUSED, WONT_READ, ABANDONED) */
+  setStatus: (gid: number, status: string) => invoke<string>("grimmory_set_status", { gid, status }),
+  /** Grimmory's progress reset (both kinds) and this PC's place */
+  resetProgress: (gid: number) => invoke<string>("grimmory_reset_progress", { gid }),
+  /** a book only on this PC: its place goes */
+  resetPlace: (id: number) => invoke<void>("book_reset_place", { id }),
   keepUp: (id: number, follow: boolean) => invoke<OpenPlace | null>("grimmory_keep_up", { id, follow }),
   closed: (id: number) => invoke<void>("grimmory_closed", { id }),
   match: (id: number) => invoke<number | null>("grimmory_match", { id }),
