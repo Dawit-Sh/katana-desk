@@ -20,8 +20,9 @@ export type FontId = "book" | "noto" | "literata" | "source" | "manrope" | "atki
 export type ColourId = "theme" | "paper" | "sepia" | "grey" | "dusk" | "black";
 export type LayoutId = "auto" | "one" | "two" | "scroll";
 export type MarginId = "narrow" | "normal" | "wide";
-/** the text's colour: "auto" = the book's own on light pages, the page's on dark ones; anything else always */
-export type TextId = "auto" | "page" | "white" | "cream" | "amber" | "grey" | "ink";
+/** the text's colour: "auto" = the book's own on light pages, the page's on dark ones; the others always,
+ *  each in a shade for light pages and one for dark pages */
+export type TextId = "auto" | "soft" | "strong" | "warm" | "cool" | "dim";
 
 export type Prefs = {
   font: FontId;
@@ -121,23 +122,25 @@ export function loadUiFonts() {
   document.head.append(el);
 }
 
-export const COLOURS: { id: ColourId; name: string; bg: string; fg: string; dark: boolean }[] = [
-  { id: "paper", name: "Paper", bg: "#fdf9f2", fg: "#24201b", dark: false },
-  { id: "sepia", name: "Sepia", bg: "#f1e4c8", fg: "#3a2e1d", dark: false },
-  { id: "grey", name: "Grey", bg: "#d9d9d6", fg: "#222222", dark: false },
-  { id: "dusk", name: "Dusk", bg: "#1d2024", fg: "#d9d5cc", dark: true },
-  { id: "black", name: "Black", bg: "#000000", fg: "#c9c9c9", dark: true },
+type Page = { bg: string; fg: string; dark: boolean };
+
+/** Page colours, each with its other side: what Invert turns it into (the same page by night or by day). */
+export const COLOURS: (Page & { id: ColourId; name: string; other: Page })[] = [
+  { id: "paper", name: "Paper", bg: "#fdf9f2", fg: "#24201b", dark: false, other: { bg: "#1d2024", fg: "#d9d5cc", dark: true } },
+  { id: "sepia", name: "Sepia", bg: "#f1e4c8", fg: "#3a2e1d", dark: false, other: { bg: "#241f18", fg: "#e2d3b4", dark: true } },
+  { id: "grey", name: "Grey", bg: "#d9d9d6", fg: "#222222", dark: false, other: { bg: "#2a2b2d", fg: "#d3d3cf", dark: true } },
+  { id: "dusk", name: "Dusk", bg: "#1d2024", fg: "#d9d5cc", dark: true, other: { bg: "#fdf9f2", fg: "#24201b", dark: false } },
+  { id: "black", name: "Black", bg: "#000000", fg: "#c9c9c9", dark: true, other: { bg: "#f7f7f4", fg: "#121212", dark: false } },
 ];
 
-/** Text colours to choose from ("page" = the page colour's own text colour, on every page). */
-export const TEXTS: { id: TextId; name: string; fg?: string }[] = [
+/** Text colours: each has a shade for light pages and one for dark pages, so it always reads well. */
+export const TEXTS: { id: TextId; name: string; light?: string; dark?: string }[] = [
   { id: "auto", name: "Automatic" },
-  { id: "page", name: "The page's" },
-  { id: "white", name: "White", fg: "#f2f0ea" },
-  { id: "cream", name: "Cream", fg: "#e8dcc0" },
-  { id: "amber", name: "Amber", fg: "#f0b860" },
-  { id: "grey", name: "Grey", fg: "#9a9a96" },
-  { id: "ink", name: "Ink", fg: "#14120f" },
+  { id: "soft", name: "Soft", light: "#4a443c", dark: "#bdb8ae" },
+  { id: "strong", name: "Strong", light: "#000000", dark: "#ffffff" },
+  { id: "warm", name: "Warm", light: "#5a3c1c", dark: "#e9d3a6" },
+  { id: "cool", name: "Cool", light: "#1e3550", dark: "#c6d6e8" },
+  { id: "dim", name: "Dim", light: "#6e6a64", dark: "#8d8a84" },
 ];
 
 export const SPACINGS = [1.4, 1.6, 1.8, 2.0];
@@ -156,10 +159,11 @@ export type PageColours = { bg: string; fg: string; dark: boolean; force: boolea
 export function pageColours(p: Prefs): PageColours {
   let c = COLOURS.find((x) => x.id === p.colour);
   if (!c) c = document.documentElement.dataset.tone !== "light" ? COLOURS[3] : COLOURS[0];
-  let { bg, fg, dark } = c;
-  if (p.invert) [bg, fg, dark] = [fg, bg, !dark];
+  const page: Page = p.invert ? c.other : c;
+  let { fg } = page;
+  const { bg, dark } = page;
   const t = TEXTS.find((x) => x.id === p.text);
-  if (t?.fg) fg = t.fg;
+  if (t?.light && t.dark) fg = dark ? t.dark : t.light;
   return { bg, fg, dark, force: dark || p.invert || (p.text ?? "auto") !== "auto" };
 }
 

@@ -185,7 +185,7 @@ export function AaPanel({
       <button type="button" className="arow sw-row" onClick={() => set({ invert: !prefs.invert })} aria-pressed={prefs.invert}>
         <span>
           Invert colours
-          <small>{prefs.invert ? "The page and the text swap colours" : "Swap the page and text colours: light text on a dark page, or the other way"}</small>
+          <small>{prefs.invert ? "This page colour by night (or by day): Paper turns to Dusk, Black to white" : "The same page colour for the other time of day: light pages go dark, dark pages go light"}</small>
         </span>
         <span className={`sw ${prefs.invert ? "on" : ""}`} />
       </button>
@@ -198,7 +198,7 @@ export function AaPanel({
               key={t.id}
               on={prefs.text === t.id}
               name={t.name}
-              title={t.id === "auto" ? "The book's own colours on light pages, the page's text colour on dark ones" : t.id === "page" ? "The page colour's own text colour, even over the book's colours" : t.name}
+              title={t.id === "auto" ? "The book's own colours on light pages, the page's text colour on dark ones" : `${t.name}: a shade for light pages and one for dark pages, over the book's own colours`}
               onPick={() => set({ text: t.id })}
             >
               <span className="txc" style={{ background: pc.bg, color: t.id === "auto" && !pc.force ? undefined : pc.fg }}>

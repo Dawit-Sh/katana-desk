@@ -107,8 +107,8 @@
 .slider.rtl .sl-tip { transform: translateX(-50%) scaleX(-1) }
 
 /* page colours: the page picture is tinted, highlights and pins keep their own colours */
-.pv.t-invert .pg { background: #000 }
-.pv.t-invert .pgimg { filter: invert(1) hue-rotate(180deg) }
+.pv.t-invert .pg { background: #141414 }
+.pv.t-invert .pgimg { filter: invert(.92) hue-rotate(180deg) }
 .pv.t-sepia .pg { background: #f1e4c8 }
 .pv.t-sepia .pgimg { filter: sepia(.6) saturate(1.1) brightness(.96) }
 .pv.t-dim .pg { background: #8a8a8a }
@@ -118,8 +118,8 @@
 .tintpg { width: 44px; height: 58px; border-radius: 6px; display: flex; flex-direction: column; gap: 5px; padding: 9px 7px; background: #fff; border: 1px solid rgba(127, 127, 127, .35) }
 .tintpg i { height: 3px; border-radius: 2px; background: #222 }
 .tintpg i:last-child { width: 60% }
-.tintpg.t-invert { background: #000 }
-.tintpg.t-invert i { background: #ddd }
+.tintpg.t-invert { background: #141414 }
+.tintpg.t-invert i { background: #d8d8d6 }
 .tintpg.t-sepia { background: #f1e4c8 }
 .tintpg.t-sepia i { background: #3a2e1d }
 .tintpg.t-dim { background: #8a8a8a }
