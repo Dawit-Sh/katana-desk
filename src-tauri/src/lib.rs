@@ -4,6 +4,7 @@
 mod db;
 mod grimmory;
 mod library;
+mod marks;
 mod meta;
 
 use db::{Book, Folder};
@@ -155,6 +156,71 @@ fn reveal(path: String) -> Res<()> {
 }
 
 #[tauri::command]
+fn bookmarks(lib: State<Library>, book_id: i64) -> Res<Vec<marks::Bookmark>> {
+    let conn = lib.db.0.lock().unwrap();
+    marks::list(&conn, book_id).map_err(err)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn add_bookmark(
+    lib: State<Library>,
+    book_id: i64,
+    cfi: String,
+    fraction: Option<f64>,
+    page_label: Option<String>,
+    chapter: Option<String>,
+    excerpt: Option<String>,
+) -> Res<marks::Bookmark> {
+    let conn = lib.db.0.lock().unwrap();
+    let m = marks::NewMark {
+        book_id,
+        cfi: &cfi,
+        fraction,
+        page_label: page_label.as_deref(),
+        chapter: chapter.as_deref(),
+        excerpt: excerpt.as_deref(),
+    };
+    marks::add(&conn, &m).map_err(err)
+}
+
+#[tauri::command]
+fn remove_bookmark(lib: State<Library>, id: i64) -> Res<()> {
+    let conn = lib.db.0.lock().unwrap();
+    marks::remove(&conn, id).map_err(err)
+}
+
+#[tauri::command]
+fn update_bookmark(lib: State<Library>, id: i64, title: Option<String>, note: Option<String>) -> Res<()> {
+    let conn = lib.db.0.lock().unwrap();
+    marks::update(&conn, id, title.as_deref(), note.as_deref()).map_err(err)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReaderPrefs {
+    /// this book's own settings (JSON), when it has any
+    book: Option<String>,
+    /// the default for books without their own ("Save as default")
+    default: Option<String>,
+}
+
+#[tauri::command]
+fn reader_prefs(lib: State<Library>, book_id: i64) -> Res<ReaderPrefs> {
+    let conn = lib.db.0.lock().unwrap();
+    Ok(ReaderPrefs {
+        book: marks::book_prefs(&conn, book_id).map_err(err)?,
+        default: db::get_setting(&conn, "reader.defaults").map_err(err)?,
+    })
+}
+
+#[tauri::command]
+fn set_book_prefs(lib: State<Library>, book_id: i64, prefs: Option<String>) -> Res<()> {
+    let conn = lib.db.0.lock().unwrap();
+    marks::set_book_prefs(&conn, book_id, prefs.as_deref()).map_err(err)
+}
+
+#[tauri::command]
 fn has_mica() -> bool {
     MICA.load(Ordering::Relaxed)
 }
@@ -237,6 +303,12 @@ pub fn run() {
             set_setting,
             reveal,
             has_mica,
+            bookmarks,
+            add_bookmark,
+            remove_bookmark,
+            update_bookmark,
+            reader_prefs,
+            set_book_prefs,
             grimmory::grimmory_status,
             grimmory::grimmory_sign_in,
             grimmory::grimmory_sign_out,

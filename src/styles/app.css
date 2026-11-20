@@ -7,7 +7,7 @@
   --font-ui: "Manrope Variable", Manrope, "Segoe UI", system-ui, sans-serif;
   --font-book: "Noto Serif", Georgia, serif;
 }
-:root, :root[data-theme="graphite"] {
+:root, :root[data-theme="graphite"], .rd.tone-graphite {
   --k-bg: #101214; --k-side: #16191c; --k-on: #e7eaee; --k-var: #c8d0d8; --k-dim: #8f99a3; --k-card: #1f2327;
   --k-sc: #252a2f; --k-sch: #30363c; --k-schh: #3c434a; --k-outv: #4e5660; --k-out: #98a2ad; --k-pri: #b7c7d9;
   --k-onpri: #223244; --k-pric: #33475e; --k-onpric: #d6e4f5; --k-surface: #171a1d; --k-glass: rgba(22, 25, 28, .86);
@@ -15,7 +15,7 @@
   --k-canvas: #0b0d0f; --k-link: #9cc4ec; --k-cap-hover: rgba(255, 255, 255, .08);
   color-scheme: dark;
 }
-:root[data-theme="paper"] {
+:root[data-theme="paper"], .rd.tone-paper {
   --k-bg: #fff8f0; --k-side: #f6ece1; --k-on: #1b1c1f; --k-var: #514941; --k-dim: #7d7268; --k-card: #f2e4d5;
   --k-sc: #f7ebde; --k-sch: #f0e3d6; --k-schh: #e8dccf; --k-outv: #d2c8bc; --k-out: #82766b; --k-pri: #405f6b;
   --k-onpri: #ffffff; --k-pric: #d3e7ef; --k-onpric: #09232d; --k-surface: #fffbf7; --k-glass: rgba(250, 243, 235, .86);
@@ -238,24 +238,12 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .th.on .pic { outline: 3px solid var(--k-pri); outline-offset: 2px }
 .th.on { font-weight: 600 }
 
-/* ---------- reader ---------- */
-.rd { position: relative; flex: 1; min-height: 0; background: var(--k-page); display: flex; flex-direction: column; color: var(--k-on) }
-.rtb { height: 48px; flex: none; display: flex; align-items: center; gap: 4px; padding-left: 8px; position: relative; z-index: 4; background: var(--k-page); border-bottom: 1px solid color-mix(in srgb, var(--k-outv) 45%, transparent) }
-.rtb .t { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; line-height: 1.25; max-width: 50%; pointer-events: none }
+/* ---------- reader (the rest is in src/reader/reader.css) ---------- */
 .t b { display: block; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .t small { font-size: 11.5px; color: var(--k-var); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block }
 .ib { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 999px; color: var(--k-on); flex: none }
 .ib:hover { background: var(--k-cap-hover) }
 .ib .ms { font-size: 22px }
-.pgarea { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: stretch }
-.strip { height: 48px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; color: var(--k-pnum); font-variant-numeric: tabular-nums; padding: 0 48px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.strip.bot { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px }
-.strip.bot span:last-child { text-align: right }
-.page { flex: 1; min-height: 0; position: relative }
-.page foliate-view { position: absolute; inset: 0; display: block }
-.rmsg { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; color: var(--k-var); padding: 0 40px }
-.rmsg .ms { font-size: 40px }
-.rmsg b { color: var(--k-on); font-size: 17px }
 
 /* ---------- Grimmory ---------- */
 /* continue reading: cover and text straight on the library ground, no boxes */

@@ -46,13 +46,38 @@ Built with [Tauri 2](https://github.com/tauri-apps/tauri), React and TypeScript 
 Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/seanmonstar/reqwest)); the place rules are in
 `place.rs` with their tests (`cargo test`).
 
+## Milestone 3: Reading view
+
+- The top bar and the pill bar float over the page and fade after 2 s of a still mouse; the first move brings them back.
+  They stay while a floating panel, a footnote or Grimmory's question is open.
+- Panels float over the page (Contents and Search on the left, Bookmarks and Reading settings on the right). The pin docks
+  one beside the page and the page moves over; a pinned side stays pinned for every book. A window too narrow to dock keeps
+  it floating.
+- Pages: Auto (two pages when the page has 1200 px of room, else one), One, Two or Scroll.
+- Contents with each chapter's page (the printed page when the book has a page list), the chapter you're in lit up,
+  nested parts folding.
+- Search in the book: every match marked on the pages, a counter ("3 of 42"), Enter and Shift Enter for the next and
+  previous, the matches listed by chapter.
+- Reading settings (Aa), per book, with "Save as default" for books without their own: font (the book's own, Noto Serif,
+  Literata, Source Serif, Manrope, Atkinson Hyperlegible, all bundled), size, line spacing, alignment, margins,
+  hyphenation, the book's own styles on or off, page colours (as the app, Paper, Sepia, Grey, Dusk, Black), the layout,
+  and footnotes in a pop-up or followed. Every choice with a look is drawn as a little picture of the result.
+- Footnotes open in a pop-up over the page, with "Go to the note".
+- Bookmarks: Ctrl B, a click on the page's top corner or the ribbon button; the ribbon hangs on a marked page. The marks
+  panel lists them with their page, chapter and first words, searchable, with the place you are between them.
+  They are kept in SQLite shaped for Grimmory sync in milestone 4 (local book id, uuid, remote id and CFI, sync state,
+  a tombstone for removals Grimmory has to hear about).
+- "Back to p. N" after any jump (contents, search, a link, the slider, a bookmark, a footnote's "Go to the note");
+  it flips, so you can hop between the two places.
+- The reading place keeps syncing with Grimmory as in milestone 2; a jump counts as reading.
+
 ## Keys
 
 | Where | Keys |
 |---|---|
 | Anywhere | Ctrl K search · Ctrl O open a file · Ctrl , settings · F11 full screen |
 | Library | Arrows move between covers · Space or a click shows the book's page · Enter or a double-click opens it · Esc closes the page |
-| Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Esc back to the library |
+| Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Ctrl B bookmark · Ctrl F search · Alt ← back to where you jumped from · Ctrl + / Ctrl − / Ctrl 0 text size · Esc closes a note or panel, then the book |
 
 ## Build
 

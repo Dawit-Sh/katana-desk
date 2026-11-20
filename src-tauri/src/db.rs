@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 pub struct Db(pub Mutex<Connection>);
 
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -198,6 +198,10 @@ impl Db {
                 );
                 ",
             )?;
+        }
+        if version < 3 {
+            // bookmarks and per-book reading settings (milestone 3), additive only
+            conn.execute_batch(crate::marks::SCHEMA_V3)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))
