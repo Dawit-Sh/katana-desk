@@ -23,7 +23,7 @@ let rel = all
   .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 if (rel) {
   for (const a of rel.assets) await gh("DELETE", `repos/${repo}/releases/assets/${a.id}`);
-  rel = await gh("PATCH", `repos/${repo}/releases/${rel.id}`, { target_commitish: process.env.GITHUB_SHA, body });
+  rel = await gh("PATCH", `repos/${repo}/releases/${rel.id}`, { tag_name: tag, target_commitish: process.env.GITHUB_SHA, body });
   console.log(`Reusing draft ${rel.id} for ${tag} (its old files removed).`);
 } else {
   rel = await gh("POST", `repos/${repo}/releases`, {
