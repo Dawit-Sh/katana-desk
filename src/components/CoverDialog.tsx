@@ -3,6 +3,7 @@
 // Open Library cover; move and zoom it in a 2:3 frame; see it in the library and on the reading card;
 // or go back to the original. Covers are saved on this PC; Grimmory's own stay untouched.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Spinner } from "./Spinner";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { covers, type OlCover } from "../lib/api";
@@ -317,12 +318,12 @@ export function CoverDialog({ t }: { t: CoverTarget }) {
                   title={c.state === "failed" ? c.error : c.name}
                 >
                   <span className="cd-thumb">
-                    {c.url ? <img src={c.url} alt="" draggable={false} /> : <i className={`ms ${c.state === "loading" ? "spin" : ""}`}>{c.state === "loading" ? "progress_activity" : "hide_image"}</i>}
+                    {c.url ? <img src={c.url} alt="" draggable={false} /> : c.state === "loading" ? <Spinner /> : <i className="ms">hide_image</i>}
                   </span>
                   {c.name}
                 </button>
               ))}
-              {olState === "looking" && <span className="cd-cand loading"><span className="cd-thumb"><i className="ms spin">progress_activity</i></span>Open Library</span>}
+              {olState === "looking" && <span className="cd-cand loading"><span className="cd-thumb"><Spinner /></span>Open Library</span>}
             </div>
             {olState === "failed" && <div className="su">Open Library can't be reached right now.</div>}
             <button type="button" className="cd-drop" onClick={choose}>

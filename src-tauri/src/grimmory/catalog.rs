@@ -484,7 +484,25 @@ async fn run(app: &AppHandle, full: bool) -> GRes<()> {
     }
     // books on this PC whose place moved on Grimmory: work out what to do now (offers wait for the book)
     let after = read_marks(app);
-    let moved: Vec<i64> = after.iter().filter(|(id, lr)| before.get(id) != Some(lr)).map(|(id, _)| *id).collect();
+    let mut moved: Vec<i64> = after.iter().filter(|(id, lr)| before.get(id) != Some(lr)).map(|(id, _)| *id).collect();
+    // the books being read here are looked at every time: a book reset or marked unread on Grimmory may
+    // not change its last-read time, and it should leave Continue reading here too
+    let reading: Vec<i64> = {
+        let conn = conn_of(app);
+        let mut st = conn
+            .prepare(
+                "SELECT DISTINCT grimmory_id FROM books WHERE grimmory_id IS NOT NULL AND missing = 0
+                   AND fraction > 0.004 AND fraction < 0.995 ORDER BY opened_at DESC LIMIT 30",
+            )
+            .map_err(|e| GErr::Other(e.to_string()))?;
+        let rows = st.query_map([], |r| r.get(0)).map_err(|e| GErr::Other(e.to_string()))?;
+        rows.flatten().collect()
+    };
+    for gid in reading {
+        if !moved.contains(&gid) {
+            moved.push(gid);
+        }
+    }
     for gid in moved {
         let _ = super::sync::pull_linked(app, gid).await;
     }

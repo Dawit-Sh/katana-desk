@@ -295,3 +295,7 @@
 .gadd .ms { font-size: 18px }
 .lshint { margin: 0; font-size: 13px; color: var(--k-var) }
 .bmtop .sfield { height: 40px; border-radius: 20px; padding: 0 8px 0 14px; background: var(--k-sc) }
+
+/* a small ring for "working" (syncing, signing in, looking), in place of an icon */
+.spinner { display: inline-block; flex: none; width: 16px; height: 16px; margin: 1px; border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; animation: spin .75s linear infinite }
+.spinner.big { width: 40px; height: 40px; border-width: 3px }

@@ -2,6 +2,7 @@
 // section on the right. General, Appearance, Reading defaults, Sources (Grimmory and Local folders),
 // Dictionaries, Sync and backup, Keyboard, About.
 import { getVersion } from "@tauri-apps/api/app";
+import { Spinner } from "../components/Spinner";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
@@ -73,7 +74,7 @@ function GrimmorySettings() {
         {g.signedIn ? (
           <>
             <button type="button" className="pill" disabled={g.syncing} onClick={() => grimmory.sync(true).catch(() => {})} title="Fetch the whole library again (only changed books are written)">
-              <i className={`ms ${g.syncing ? "spin" : ""}`}>{g.syncing ? "progress_activity" : "sync"}</i>Sync everything
+              {g.syncing ? <Spinner /> : <i className="ms">sync</i>}Sync everything
             </button>
             <button type="button" className="pill" onClick={async () => { await grimmory.signOut(); setG(await grimmory.status()); }}>
               <i className="ms">logout</i>Sign out
@@ -341,7 +342,7 @@ function SyncBackup() {
           </div>
           {g?.signedIn && (
             <button type="button" className="pill" disabled={g.syncing} onClick={() => grimmory.sync(false).catch(() => {})}>
-              <i className={`ms ${g.syncing ? "spin" : ""}`}>{g.syncing ? "progress_activity" : "sync"}</i>Sync now
+              {g.syncing ? <Spinner /> : <i className="ms">sync</i>}Sync now
             </button>
           )}
         </div>

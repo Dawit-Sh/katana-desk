@@ -121,13 +121,24 @@ pub enum Decision {
     Apply { use_cfi: bool },
     /// The server's place wins but sits behind this PC's: ask first.
     Offer { use_cfi: bool },
+    /// Grimmory lost the place it had (reset, or the book marked unread there) and nothing was read here
+    /// since: the place here goes too, and the book is unread here as well.
+    Clear,
 }
 
 pub fn decide(local: Option<&LocalPlace>, server: Option<&ServerPlace>, seen: Option<&Seen>, now: i64) -> Decision {
     let local = local.filter(|l| l.cfi.is_some() || l.fraction.is_some());
     let Some(server) = server.filter(|s| s.cfi.is_some() || s.fraction.unwrap_or(0.0) > 0.0) else {
-        // nothing on the server: a place here goes up
-        return if local.map_or(false, |l| l.pending) { Decision::Push } else { Decision::Keep };
+        // nothing on the server: a place read here goes up; one Grimmory had and dropped (reset or marked
+        // unread there) goes here too; one it never had stays
+        let had = seen.map_or(false, |s| s.cfi.is_some() || s.fraction.unwrap_or(0.0) > 0.0);
+        return if local.map_or(false, |l| l.pending) {
+            Decision::Push
+        } else if local.is_some() && had {
+            Decision::Clear
+        } else {
+            Decision::Keep
+        };
     };
     let changed = seen.map_or(true, |s| !s.same_as(server));
     // a fresh CFI is one the server didn't have when we last looked (a KOReader sync can move the
@@ -192,6 +203,20 @@ mod tests {
     }
     fn lp(cfi: &str, f: f64, pending: bool, at: i64) -> LocalPlace {
         LocalPlace { cfi: Some(cfi.into()), fraction: Some(f), pending, at: Some(at) }
+    }
+
+    #[test]
+    fn reset_or_unread_on_grimmory_clears_the_place_here() {
+        let seen = Seen { cfi: Some("a".into()), fraction: Some(0.4) };
+        // nothing read here since: unread here too
+        let l = lp("a", 0.4, false, NOW - 3_600_000);
+        assert_eq!(decide(Some(&l), None, Some(&seen), NOW), Decision::Clear);
+        // read here after the reset: this PC's place goes up
+        let l = lp("b", 0.5, true, NOW - 1000);
+        assert_eq!(decide(Some(&l), None, Some(&seen), NOW), Decision::Push);
+        // a place Grimmory never had stays
+        let l = lp("a", 0.4, false, NOW - 3_600_000);
+        assert_eq!(decide(Some(&l), None, None, NOW), Decision::Keep);
     }
 
     #[test]

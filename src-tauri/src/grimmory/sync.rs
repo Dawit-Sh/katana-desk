@@ -97,6 +97,10 @@ pub async fn server_place(app: &AppHandle, gid: i64, format: &str, timeout: Opti
 /// there's no reader place, or when a real KOReader device wrote it last (its sync time is the book's
 /// last read time).
 pub fn place_from(v: &serde_json::Value, format: &str, now: i64) -> Option<ServerPlace> {
+    // marked unread on Grimmory: no place, whatever percentage it still keeps
+    if v.get("readStatus").and_then(|x| x.as_str()) == Some("UNREAD") {
+        return None;
+    }
     let key = if is_comic(format) { "cbxProgress" } else if format == "pdf" { "pdfProgress" } else { "epubProgress" };
     let p = v.get(key).filter(|x| x.is_object());
     let last = v.get("lastReadTime").and_then(parse_time);
@@ -154,6 +158,13 @@ pub fn place_from(v: &serde_json::Value, format: &str, now: i64) -> Option<Serve
 mod tests {
     use super::place_from;
     use serde_json::json;
+
+    #[test]
+    fn marked_unread_has_no_place() {
+        let v = json!({"readProgress":0.5,"readStatus":"UNREAD","pdfProgress":{"page":34,"percentage":50.0,"updatedAt":"2026-11-20T16:20:28Z"}});
+        assert_eq!(place_from(&v, "pdf", 1_795_182_400_000), None);
+        assert_eq!(place_from(&json!({}), "epub", 1_795_182_400_000), None);
+    }
 
     #[test]
     fn pdf_and_comic_places_are_pages() {
@@ -229,6 +240,23 @@ fn apply(app: &AppHandle, id: i64, p: &ServerPlace, use_cfi: bool) {
             place_at = ?5 WHERE id = ?1",
         params![id, location, p.fraction, seen_json(&Seen::of(p)), db::now()],
     );
+}
+
+/// Unread here too: no place, not in Continue reading, not finished.
+fn clear(app: &AppHandle, id: i64) {
+    {
+        let conn = conn_of(app);
+        let _ = conn.execute(
+            "UPDATE books SET location = NULL, fraction = NULL, chapter = NULL, opened_at = NULL, finished_at = NULL,
+                place_state = 'clean', server_place = NULL, synced_at = ?2, place_at = NULL WHERE id = ?1",
+            params![id, db::now()],
+        );
+        let _ = conn.execute(
+            "UPDATE gbooks SET progress = NULL WHERE id = (SELECT grimmory_id FROM books WHERE id = ?1)",
+            [id],
+        );
+    }
+    let _ = app.emit("library-changed", ());
 }
 
 fn note_seen(app: &AppHandle, id: i64, p: Option<&ServerPlace>) {
@@ -312,6 +340,13 @@ async fn reconcile(app: &AppHandle, id: i64, timeout: Option<Duration>) -> GRes<
         Decision::Apply { use_cfi } if !is_open => {
             offers().lock().unwrap().remove(&id);
             apply(app, id, server.as_ref().unwrap(), *use_cfi);
+        }
+        Decision::Clear if !is_open => {
+            offers().lock().unwrap().remove(&id);
+            clear(app, id);
+        }
+        Decision::Clear => {
+            // open here: whoever reads on decides; a page turned here goes up
         }
         Decision::Apply { .. } | Decision::Offer { .. } => {
             // an open book never moves under the reader: it asks

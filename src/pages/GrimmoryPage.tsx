@@ -1,5 +1,6 @@
 // Grimmory: the library on the Zima, kept on this PC (signed in once, synced in the background).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Spinner } from "../components/Spinner";
 import { grimmory, gFormat, gReadable, m7, READABLE, type Book, type Dl, type GBook } from "../lib/api";
 import { fmtAgo, fmtDate, fmtMb, fmtTime, fmtWhen, plural } from "../lib/format";
 import { useStore, type GFilter, type GSort } from "../lib/store";
@@ -79,7 +80,7 @@ export function SignIn() {
       </label>
       {error && <div className="err" role="alert">{error}</div>}
       <button type="submit" className="pill fill" disabled={busy || !user.trim() || !password}>
-        <i className={`ms ${busy ? "spin" : ""}`}>{busy ? "progress_activity" : "login"}</i>
+        {busy ? <Spinner /> : <i className="ms">login</i>}
         {busy ? "Signing in…" : "Sign in"}
       </button>
     </form>
@@ -104,7 +105,7 @@ function SyncPill() {
           setChecking(false);
         }}
       >
-        <i className={`ms ${checking ? "spin" : ""}`}>{checking ? "progress_activity" : "cloud_off"}</i>
+        {checking ? <Spinner /> : <i className="ms">cloud_off</i>}
         {checking ? "Looking for Grimmory…" : g.waiting ? `Offline · ${plural(g.waiting, "place")} waiting` : "Offline · Try again"}
       </button>
     );
@@ -124,7 +125,7 @@ function SyncPill() {
       title={g.lastError ? `The last sync didn't finish: ${g.lastError}` : "Library and reading places synced with Grimmory. Click to sync now."}
       onClick={() => grimmory.sync(false).catch(() => {})}
     >
-      <i className={`ms ${g.syncing ? "spin" : ""}`}>{g.syncing ? "progress_activity" : g.lastError ? "sync_problem" : "cloud_done"}</i>
+      {g.syncing ? <Spinner /> : <i className="ms">{g.lastError ? "sync_problem" : "cloud_done"}</i>}
       {text}
     </button>
   );
@@ -584,7 +585,7 @@ export function GrimmoryPage() {
         </div>
         {loading ? (
           <div className="empty">
-            <i className={`ms big ${g.syncing ? "spin" : ""}`}>{g.syncing ? "progress_activity" : "cloud_sync"}</i>
+            {g.syncing ? <Spinner big /> : <i className="ms big">cloud_sync</i>}
             <b>{g.syncing ? "Getting your library" : g.reach === "offline" ? "Grimmory can't be reached" : "Your library comes next"}</b>
             <p>
               {g.syncing

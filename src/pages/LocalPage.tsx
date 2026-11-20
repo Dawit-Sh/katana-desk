@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import { Spinner } from "../components/Spinner";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, BOOK_EXTENSIONS, m7, READABLE, type Book } from "../lib/api";
 import { fmtTime, plural, progressLabel } from "../lib/format";
@@ -30,7 +31,7 @@ function StatusPill() {
     " checked when Katana Desk starts and while it's open. Click to check now.";
   return (
     <button type="button" className="pill tone" title={title} onClick={() => api.scanNow()} disabled={scan.scanning}>
-      <i className={`ms ${scan.scanning ? "spin" : ""}`}>{scan.scanning ? "progress_activity" : "folder"}</i>
+      {scan.scanning ? <Spinner /> : <i className="ms">folder</i>}
       {scan.scanning
         ? scan.total > 50
           ? `Checking folders · ${scan.done.toLocaleString("en-US")} of ${scan.total.toLocaleString("en-US")}`
