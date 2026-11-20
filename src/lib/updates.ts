@@ -18,6 +18,8 @@ type UpdState = {
   got: number;
   total: number;
   error?: string;
+  /** what failed: the check, or the download and install */
+  failed?: "check" | "install";
   checkedAt?: number;
   kind?: InstallKind;
 };
@@ -48,7 +50,7 @@ export async function checkForUpdate(quiet = false): Promise<void> {
   } catch (e) {
     // GitHub answers 404 until a release with latest.json is published: nothing newer to offer
     if (/valid release JSON/i.test(String(e))) set({ phase: quiet && st !== "idle" ? st : "none", checkedAt: Date.now() });
-    else if (!quiet) set({ phase: "error", error: String(e) });
+    else if (!quiet) set({ phase: "error", failed: "check", error: String(e) });
   }
 }
 
@@ -63,7 +65,7 @@ export async function installUpdate(): Promise<void> {
     });
     set({ phase: "ready" });
   } catch (e) {
-    set({ phase: "error", error: String(e) });
+    set({ phase: "error", failed: "install", error: String(e) });
   }
 }
 

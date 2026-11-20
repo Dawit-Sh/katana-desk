@@ -401,7 +401,11 @@ function UpdateRows() {
             : u.phase === "ready"
               ? `Version ${u.version} is installed. Restart to use it.`
               : u.phase === "error"
-                ? "Couldn't check for updates. Are you online?"
+                ? u.failed === "install"
+                  ? /signature/i.test(u.error ?? "")
+                    ? "The download didn't match its signature, so it wasn't installed."
+                    : "The update couldn't be downloaded. Try again in a while."
+                  : "Couldn't check for updates. Are you online?"
                 : u.checkedAt
                   ? `Last checked ${fmtWhen(u.checkedAt)}`
                   : "Updates come from the GitHub releases, signed so only real ones install.";
