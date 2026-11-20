@@ -39,6 +39,7 @@
         "frame-src": "'self' blob:"
       },
       "devCsp": null,
+      "dangerousDisableAssetCspModification": ["style-src"],
       "assetProtocol": {
         "enable": true,
         "scope": []
