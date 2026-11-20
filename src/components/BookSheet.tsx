@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { api, grimmory, READABLE, type Book } from "../lib/api";
+import { api, bookKey, grimmory, m7, READABLE, type Book } from "../lib/api";
 import { fmtAgo, fmtDate, fmtSize, fmtWhen } from "../lib/format";
 import { useStore } from "../lib/store";
 import { Cover } from "./Cover";
+import { coverForBook } from "./CoverDialog";
+import { ListMenu } from "../pages/ListsPage";
 
 /** The book's page at the side (400 px), opened by one click on a cover. */
 export function BookSheet({ book }: { book: Book }) {
   const close = useStore((s) => s.closeSheet);
   const open = useStore((s) => s.open);
   const folders = useStore((s) => s.folders);
-  const [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState<false | "more" | "lists">(false);
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => setMenu(false), [book.id]);
+  const onLists = useStore((s) => s.lists.filter((l) => l.books.includes(bookKey(book))).length);
   // the same file on Grimmory? Then its place syncs with the Fire (checked by partial MD5, once)
   const signedIn = useStore((s) => !!s.g?.signedIn);
   const [gid, setGid] = useState<number | null>(book.grimmoryId);
@@ -48,7 +51,12 @@ export function BookSheet({ book }: { book: Book }) {
         <button type="button" aria-label="Close" title="Close (Esc)" onClick={close}><i className="ms">close</i></button>
       </div>
       <div className="shb">
-        <Cover book={book} size="l" progress={false} />
+        <div className="cvwrap">
+          <Cover book={book} size="l" progress={false} />
+          <button type="button" className="cvbtn" onClick={() => useStore.getState().setCoverFor(coverForBook(book))} title="Pick another cover, or your own picture">
+            <i className="ms">image</i>Change cover
+          </button>
+        </div>
         <div className="rct">
           <span className="ti">{book.title}</span>
           {book.author && <span className="su">{book.author}</span>}
@@ -70,19 +78,32 @@ export function BookSheet({ book }: { book: Book }) {
           className="pill fill wide"
           disabled={!readable}
           title={readable ? "Open (Enter or double-click)" : `${book.format.toUpperCase()} reading comes in a later version`}
-          onClick={() => open(book.id)}
+          onClick={(e) => (e.ctrlKey ? m7.openWindow(book.id, null, book.title) : open(book.id))}
         >
           <i className="ms">menu_book</i>
           {!readable ? `${book.format.toUpperCase()} comes later` : started ? `Continue · ${pct}%` : "Start reading"}
         </button>
-        <button type="button" className="pill" disabled title="Lists come in a later version">
-          <i className="ms">checklist</i>Add to a list
+        <button type="button" className={`pill ${onLists ? "tone" : ""}`} onClick={() => setMenu((m) => (m === "lists" ? false : "lists"))} aria-expanded={menu === "lists"}>
+          <i className="ms">checklist</i>{onLists ? `On ${onLists === 1 ? "a list" : `${onLists} lists`}` : "Add to a list"}
         </button>
-        <button type="button" className="pill" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
+        <button type="button" className="pill" onClick={() => setMenu((m) => (m === "more" ? false : "more"))} aria-expanded={menu === "more"}>
           <i className="ms">more_horiz</i>More
         </button>
-        {menu && (
+        {menu === "lists" && (
+          <div className="menu" ref={menuRef} style={{ left: 0, top: 96 }}>
+            <ListMenu bookKey={bookKey(book)} />
+          </div>
+        )}
+        {menu === "more" && (
           <div className="menu" ref={menuRef} style={{ right: 0, top: 96 }}>
+            {readable && (
+              <button type="button" onClick={() => { m7.openWindow(book.id, null, book.title); setMenu(false); }}>
+                <i className="ms">open_in_new</i>Open in a new window
+              </button>
+            )}
+            <button type="button" onClick={() => { useStore.getState().setCoverFor(coverForBook(book)); setMenu(false); }}>
+              <i className="ms">image</i>Change cover…
+            </button>
             <button type="button" onClick={() => { api.reveal(book.path); setMenu(false); }}>
               <i className="ms">folder_open</i>Show in File Explorer
             </button>

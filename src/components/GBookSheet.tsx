@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { api, grimmory, gFormat, gReadable, type GBook } from "../lib/api";
+import { api, grimmory, gFormat, gReadable, m7, READABLE, type GBook } from "../lib/api";
 import { fmtAgo, fmtDate, fmtMb, fmtWhen } from "../lib/format";
 import { useStore } from "../lib/store";
 import { GCover } from "./Cover";
+import { coverForG } from "./CoverDialog";
+import { ListMenu } from "../pages/ListsPage";
 import { DlButtons, dlText, useProgressOf } from "../pages/GrimmoryPage";
 
 /** A Grimmory book's page at the side (400 px): one click on a cover. */
@@ -14,8 +16,9 @@ export function GBookSheet({ book }: { book: GBook }) {
   const catalog = useStore((s) => s.catalog);
   const progressOf = useProgressOf();
   const p = progressOf(book);
-  const [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState<false | "more" | "lists">(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const onLists = useStore((s) => s.lists.filter((l) => l.books.includes(`g:${book.id}`)).length);
   useEffect(() => setMenu(false), [book.id]);
   useEffect(() => {
     if (!menu) return;
@@ -98,7 +101,12 @@ export function GBookSheet({ book }: { book: GBook }) {
         <button type="button" aria-label="Close" title="Close (Esc)" onClick={close}><i className="ms">close</i></button>
       </div>
       <div className="shb">
-        <GCover book={book} size="l" />
+        <div className="cvwrap">
+          <GCover book={book} size="l" />
+          <button type="button" className="cvbtn" onClick={() => useStore.getState().setCoverFor(coverForG(book))} title="Pick another cover, or your own picture (Grimmory's stays as it is)">
+            <i className="ms">image</i>Change cover
+          </button>
+        </div>
         <div className="rct">
           <span className="ti">{book.title}</span>
           {book.authors && <span className="su">{book.authors}</span>}
@@ -116,14 +124,27 @@ export function GBookSheet({ book }: { book: GBook }) {
       </div>
       <div className="acts2">
         {action}
-        <button type="button" className="pill" disabled title="Lists come in a later version">
-          <i className="ms">checklist</i>Add to a list
+        <button type="button" className={`pill ${onLists ? "tone" : ""}`} onClick={() => setMenu((m) => (m === "lists" ? false : "lists"))} aria-expanded={menu === "lists"}>
+          <i className="ms">checklist</i>{onLists ? `On ${onLists === 1 ? "a list" : `${onLists} lists`}` : "Add to a list"}
         </button>
-        <button type="button" className="pill" onClick={() => setMenu((m) => !m)} aria-expanded={menu}>
+        <button type="button" className="pill" onClick={() => setMenu((m) => (m === "more" ? false : "more"))} aria-expanded={menu === "more"}>
           <i className="ms">more_horiz</i>More
         </button>
-        {menu && (
+        {menu === "lists" && (
+          <div className="menu" ref={menuRef} style={{ left: 0, top: 96 }}>
+            <ListMenu bookKey={`g:${book.id}`} />
+          </div>
+        )}
+        {menu === "more" && (
           <div className="menu" ref={menuRef} style={{ right: 0, top: 96 }}>
+            {p.local && READABLE.has(p.local.format) && (
+              <button type="button" onClick={() => { m7.openWindow(p.local!.id, null, book.title); setMenu(false); }}>
+                <i className="ms">open_in_new</i>Open in a new window
+              </button>
+            )}
+            <button type="button" onClick={() => { useStore.getState().setCoverFor(coverForG(book)); setMenu(false); }}>
+              <i className="ms">image</i>Change cover…
+            </button>
             {!here && !coming && (
               <button type="button" onClick={() => { grimmory.download(book.id, false); setMenu(false); }}>
                 <i className="ms">download</i>Download to this PC

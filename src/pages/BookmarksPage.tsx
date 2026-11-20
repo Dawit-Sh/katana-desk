@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Cover } from "../components/Cover";
-import type { Book } from "../lib/api";
+import { m7, type Book } from "../lib/api";
 import { plural } from "../lib/format";
 import { useStore } from "../lib/store";
 import { MarkRows, Tabs, allMarks, inTab, logRevisit, matches, type Mark, type Tab } from "../reader/marklist";
@@ -155,7 +155,7 @@ export function BookmarksPage() {
                 {[current.author, current.fraction ? `${Math.round(current.fraction * 100)}%` : "", sync ? syncWords[sync] : ""].filter(Boolean).join(" · ")}
               </span>
             </div>
-            <button type="button" className="pill fill" onClick={() => open(current.id)}>
+            <button type="button" className="pill fill" onClick={(e) => (e.ctrlKey ? m7.openWindow(current.id, null, current.title) : open(current.id))}>
               <i className="ms">menu_book</i>
               {current.fraction ? "Continue" : "Read"}
             </button>
@@ -167,9 +167,10 @@ export function BookmarksPage() {
           <Tabs tab={tab} setTab={setTab} counts={tabCounts} />
           <MarkRows
             marks={shown}
-            onGo={(m) => {
+            onGo={(m, ctrl) => {
               logRevisit(m);
-              open(current.id, m.cfi);
+              if (ctrl) m7.openWindow(current.id, m.cfi, current.title);
+              else open(current.id, m.cfi);
             }}
             onRemove={onRemove}
             onSaveBookmark={onSaveBookmark}

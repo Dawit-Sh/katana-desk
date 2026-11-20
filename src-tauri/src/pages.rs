@@ -533,7 +533,7 @@ pub fn fill_covers(app: &AppHandle) {
     let todo: Vec<(i64, String, String)> = {
         let conn = lib.db.0.lock().unwrap();
         let Ok(mut st) = conn.prepare(
-            "SELECT id, path, format FROM books WHERE format IN ('djvu', 'cbr') AND cover IS NULL AND cover_tried = 0 AND missing = 0",
+            "SELECT id, path, format FROM books WHERE format IN ('djvu', 'cbr', 'mobi', 'prc', 'azw3', 'azw') AND cover IS NULL AND cover_tried = 0 AND missing = 0",
         ) else {
             return;
         };
@@ -543,7 +543,11 @@ pub fn fill_covers(app: &AppHandle) {
     let mut any = false;
     for (id, path, format) in todo {
         let out = lib.covers_dir.join(format!("{id}.jpg"));
-        let cover = cover_of(Path::new(&path), &format).and_then(|b| meta::save_cover(&b, &out)).map(|_| out.to_string_lossy().to_string());
+        let bytes = match format.as_str() {
+            "djvu" | "cbr" => cover_of(Path::new(&path), &format),
+            _ => meta::read(Path::new(&path), &format).cover,
+        };
+        let cover = bytes.and_then(|b| meta::save_cover(&b, &out)).map(|_| out.to_string_lossy().to_string());
         let conn = lib.db.0.lock().unwrap();
         if cover.is_some() {
             any = true;

@@ -45,6 +45,7 @@ pub fn read(path: &Path, format: &str) -> Meta {
         "fb2" => std::fs::read(path).ok().map(|b| fb2(&b)),
         "fbz" => fbz(path),
         "djvu" | "cbr" => Some(Meta { title: None, author: None, cover: crate::pages::cover_of(path, format) }),
+        "mobi" | "prc" | "azw3" | "azw" => std::fs::read(path).ok().and_then(|b| mobi(&b)),
         _ => None,
     };
     let mut m = r.unwrap_or_default();
@@ -64,6 +65,75 @@ pub fn read(path: &Path, format: &str) -> Meta {
         }
     }
     m
+}
+
+/// MOBI, AZW and AZW3 (Palm database files): the title and author from the EXTH header, and the cover,
+/// the image record EXTH 201 points at (counted from the header's first image record), or EXTH 202's
+/// thumbnail when there's no cover.
+pub fn mobi(b: &[u8]) -> Option<Meta> {
+    let u16_at = |o: usize| b.get(o..o + 2).map(|x| u16::from_be_bytes([x[0], x[1]]) as usize);
+    let u32_at = |o: usize| b.get(o..o + 4).map(|x| u32::from_be_bytes([x[0], x[1], x[2], x[3]]) as usize);
+    if b.get(60..68)? != b"BOOKMOBI" {
+        return None;
+    }
+    let n = u16_at(76)?;
+    let rec = |i: usize| -> Option<(usize, usize)> {
+        let start = u32_at(78 + i * 8)?;
+        let end = if i + 1 < n { u32_at(78 + (i + 1) * 8)? } else { b.len() };
+        (start < end && end <= b.len()).then_some((start, end))
+    };
+    let (r0, _) = rec(0)?;
+    if b.get(r0 + 16..r0 + 20)? != b"MOBI" {
+        return None;
+    }
+    let mobi_len = u32_at(r0 + 20)?;
+    let first_image = u32_at(r0 + 0x6c)?;
+    let exth_flags = u32_at(r0 + 0x80)?;
+    let mut meta = Meta::default();
+    let (name_off, name_len) = (u32_at(r0 + 0x54)?, u32_at(r0 + 0x58)?);
+    if let Some(name) = b.get(r0 + name_off..r0 + name_off + name_len) {
+        let t = String::from_utf8_lossy(name).trim().to_string();
+        if !t.is_empty() {
+            meta.title = Some(t);
+        }
+    }
+    let (mut cover, mut thumb) = (None, None);
+    if exth_flags & 0x40 != 0 {
+        let e = r0 + 16 + mobi_len;
+        if b.get(e..e + 4)? == b"EXTH" {
+            let count = u32_at(e + 8)?;
+            let mut o = e + 12;
+            for _ in 0..count.min(4096) {
+                let (kind, len) = (u32_at(o)?, u32_at(o + 4)?);
+                if len < 8 {
+                    break;
+                }
+                let data = b.get(o + 8..o + len)?;
+                let text = || String::from_utf8_lossy(data).trim().to_string();
+                match kind {
+                    100 if meta.author.is_none() => meta.author = Some(text()).filter(|t| !t.is_empty()),
+                    503 => meta.title = Some(text()).filter(|t| !t.is_empty()).or(meta.title.take()),
+                    201 if data.len() >= 4 => cover = u32_at(o + 8),
+                    202 if data.len() >= 4 => thumb = u32_at(o + 8),
+                    _ => {}
+                }
+                o += len;
+            }
+        }
+    }
+    let pick = cover.or(thumb).filter(|c| *c != 0xffff_ffff);
+    if let Some(c) = pick {
+        if first_image != 0xffff_ffff {
+            if let Some((s, e)) = rec(first_image + c) {
+                let bytes = &b[s..e];
+                // JPEG, PNG or GIF: a picture, not a resource record
+                if bytes.starts_with(&[0xff, 0xd8]) || bytes.starts_with(b"\x89PNG") || bytes.starts_with(b"GIF8") {
+                    meta.cover = Some(bytes.to_vec());
+                }
+            }
+        }
+    }
+    Some(meta)
 }
 
 /// Title and first author from an OPF package (also Calibre's metadata.opf).
@@ -476,4 +546,22 @@ pub fn save_cover(bytes: &[u8], out: &Path) -> Option<()> {
     let mut f = File::create(out).ok()?;
     let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut f, 86);
     enc.encode_image(&rgb).ok()
+}
+
+#[cfg(test)]
+mod mobi_tests {
+    /// Real books: `KATANA_TEST_MOBI="a.mobi;b.azw3" cargo test mobi -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn reads_covers_from_real_files() {
+        let list = std::env::var("KATANA_TEST_MOBI").unwrap_or_default();
+        for p in list.split(';').filter(|p| !p.is_empty()) {
+            let b = std::fs::read(p).unwrap();
+            let m = super::mobi(&b).expect("a MOBI file");
+            let c = m.cover.as_ref().map(|c| c.len()).unwrap_or(0);
+            println!("{p}: {:?} / {:?} / cover {c} bytes", m.title, m.author);
+            assert!(c > 1000, "no cover in {p}");
+            assert!(image::load_from_memory(m.cover.as_ref().unwrap()).is_ok());
+        }
+    }
 }

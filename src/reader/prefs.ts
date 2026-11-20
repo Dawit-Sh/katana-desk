@@ -135,7 +135,7 @@ export const MARGINS: Record<MarginId, { inline: number; gap: number; name: stri
 export function pageColours(p: Prefs): { bg: string; fg: string; dark: boolean } {
   const c = COLOURS.find((x) => x.id === p.colour);
   if (c) return c;
-  const dark = document.documentElement.dataset.theme !== "paper";
+  const dark = document.documentElement.dataset.tone !== "light";
   return dark ? COLOURS[3] : COLOURS[0];
 }
 

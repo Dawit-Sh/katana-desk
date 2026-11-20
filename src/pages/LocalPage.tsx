@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { api, BOOK_EXTENSIONS, READABLE, type Book } from "../lib/api";
+import { api, BOOK_EXTENSIONS, m7, READABLE, type Book } from "../lib/api";
 import { fmtTime, plural, progressLabel } from "../lib/format";
 import { useStore } from "../lib/store";
 import { listing, search } from "../lib/tree";
@@ -49,8 +49,12 @@ function BookCard({ book, selected }: { book: Book; selected: boolean }) {
       className={`bk ${selected ? "sel" : ""}`}
       data-id={book.id}
       tabIndex={selected ? 0 : -1}
-      onClick={() => select(book.id)}
+      onClick={(e) => (e.ctrlKey && readable ? m7.openWindow(book.id, null, book.title) : select(book.id))}
       onDoubleClick={() => readable && open(book.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        useStore.getState().setMenu({ x: e.clientX, y: e.clientY, local: book });
+      }}
       title={book.author ? `${book.title} · ${book.author}` : book.title}
     >
       <Cover book={book} />

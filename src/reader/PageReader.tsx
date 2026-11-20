@@ -131,6 +131,8 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
   const [winW, setWinW] = useState(window.innerWidth);
   const acted = useRef(false);
   const lastTurn = useRef(Date.now());
+  /** pages turned since the last reading tick, for the Journal's pages an hour */
+  const turns = useRef(0);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const comic = book.format === "cbz" || book.format === "cbr";
@@ -339,6 +341,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       if (reading) {
         acted.current = true;
         lastTurn.current = Date.now();
+        turns.current++;
       }
       const n = Math.max(0, Math.min(s.count - 1, p));
       setPage(n);
@@ -567,6 +570,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       if (r[0] !== pageRef.current) {
         acted.current = true;
         lastTurn.current = Date.now();
+        turns.current++;
         pageRef.current = r[0];
         setPage(r[0]);
       }
@@ -1131,7 +1135,10 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       if (e.payload === book.id) marksSync.lost(book.id).then(setLost).catch(() => {});
     });
     const tick = window.setInterval(() => {
-      if (document.visibilityState === "visible" && document.hasFocus() && Date.now() - lastTurn.current < 120_000) api.addReading(15).catch(() => {});
+      if (document.visibilityState === "visible" && document.hasFocus() && Date.now() - lastTurn.current < 120_000) {
+        api.addReading(15, book.id, turns.current).catch(() => {});
+        turns.current = 0;
+      }
     }, 15_000);
     return () => {
       clearInterval(tick);

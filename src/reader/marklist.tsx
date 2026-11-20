@@ -106,7 +106,8 @@ export function MarkRows({
   /** "You're here" goes before this row (marks.length: after the last), or nowhere */
   hereAt?: number | null;
   hereLabel?: string;
-  onGo: (m: Mark) => void;
+  /** `ctrl`: Ctrl was held (a window of its own, from the Bookmarks page) */
+  onGo: (m: Mark, ctrl?: boolean) => void;
   onRemove: (m: Mark) => void;
   onSaveBookmark: (b: Bookmark, title: string | null, note: string | null) => void;
   empty: React.ReactNode;
@@ -131,7 +132,7 @@ export function MarkRows({
       const where = placeLabel(h);
       return (
         <div key={keyOf(m)} className="mr">
-          <button type="button" className="mgo" onClick={() => onGo(m)}>
+          <button type="button" className="mgo" onClick={(e) => onGo(m, e.ctrlKey)}>
             <i className="cbar" style={{ "--c": hexOf(h.color) } as React.CSSProperties} />
             <div>
               <q className={`hq ${h.style}`} style={{ "--c": hexOf(h.color) } as React.CSSProperties}>
@@ -198,7 +199,7 @@ export function MarkRows({
     const where = placeLabel(b);
     return (
       <div key={keyOf(m)} className={`mr ${here?.has(b.id) ? "here" : ""}`}>
-        <button type="button" className="mgo" onClick={() => onGo(m)}>
+        <button type="button" className="mgo" onClick={(e) => onGo(m, e.ctrlKey)}>
           <i className="ms f ribbon-ic">bookmark</i>
           <div>
             <span className="mt">{b.title || where || "Bookmark"}</span>

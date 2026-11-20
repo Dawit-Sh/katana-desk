@@ -1,6 +1,6 @@
 // Grimmory: the library on the Zima, kept on this PC (signed in once, synced in the background).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { grimmory, gFormat, gReadable, type Book, type Dl, type GBook } from "../lib/api";
+import { grimmory, gFormat, gReadable, m7, READABLE, type Book, type Dl, type GBook } from "../lib/api";
 import { fmtAgo, fmtDate, fmtMb, fmtTime, fmtWhen, plural } from "../lib/format";
 import { useStore, type GFilter, type GSort } from "../lib/store";
 import { GCover } from "../components/Cover";
@@ -308,6 +308,14 @@ function DlItem({ d, title }: { d: Dl; title: string }) {
   );
 }
 
+/** Ctrl+click: the book in a window of its own, when its file is on this PC (else its page). */
+function ctrlOpen(b: GBook) {
+  const st = useStore.getState();
+  const local = b.localId != null ? st.books.find((x) => x.id === b.localId) : undefined;
+  if (local && READABLE.has(local.format)) m7.openWindow(local.id, null, b.title);
+  else st.gSelect(b.id);
+}
+
 function ContinueRow({ books }: { books: GBook[] }) {
   const progressOf = useProgressOf();
   const gSelect = useStore((s) => s.gSelect);
@@ -333,8 +341,12 @@ function ContinueRow({ books }: { books: GBook[] }) {
             type="button"
             key={b.id}
             className={`rcard ${i ? "small" : ""}`}
-            onClick={() => gSelect(b.id)}
+            onClick={(e) => (e.ctrlKey ? ctrlOpen(b) : gSelect(b.id))}
             onDoubleClick={() => gReadable(b) && openG(b.id)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              useStore.getState().setMenu({ x: e.clientX, y: e.clientY, g: b });
+            }}
             title="One click shows the book's page; a double-click opens it"
           >
             <GCover book={b} size={i ? "s" : "m"} />
@@ -364,8 +376,12 @@ function GCard({ b, selected }: { b: GBook; selected: boolean }) {
       className={`bk ${selected ? "sel" : ""}`}
       data-id={b.id}
       tabIndex={selected ? 0 : -1}
-      onClick={() => gSelect(b.id)}
+      onClick={(e) => (e.ctrlKey ? ctrlOpen(b) : gSelect(b.id))}
       onDoubleClick={() => readable && openG(b.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        useStore.getState().setMenu({ x: e.clientX, y: e.clientY, g: b });
+      }}
       title={b.authors ? `${b.title} · ${b.authors}` : b.title}
     >
       <GCover book={b} progress={p.fraction} />
@@ -391,8 +407,12 @@ function GRow({ b, selected }: { b: GBook; selected: boolean }) {
       className={`lrow bk-row ${selected ? "sel" : ""}`}
       data-id={b.id}
       tabIndex={selected ? 0 : -1}
-      onClick={() => gSelect(b.id)}
+      onClick={(e) => (e.ctrlKey ? ctrlOpen(b) : gSelect(b.id))}
       onDoubleClick={() => readable && openG(b.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        useStore.getState().setMenu({ x: e.clientX, y: e.clientY, g: b });
+      }}
     >
       <GCover book={b} size="s" />
       <div style={{ minWidth: 0 }}>

@@ -9,6 +9,12 @@ import { pdfjs, pdfOpts } from "../reader/pagesrc";
 const WIDTH = 360;
 
 async function firstPage(path: string): Promise<number[]> {
+  const blob = await pdfFirstPage(path, WIDTH);
+  return blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : [];
+}
+
+/** A PDF's first page drawn `width` px wide, as a JPEG (also for Change cover). */
+export async function pdfFirstPage(path: string, width: number): Promise<Blob | null> {
   const lib = await pdfjs();
   const task = lib.getDocument(pdfOpts(fileUrl(path)));
   const timer = window.setTimeout(() => task.destroy(), 20000);
@@ -16,7 +22,7 @@ async function firstPage(path: string): Promise<number[]> {
     const doc = await task.promise;
     const page = await doc.getPage(1);
     const base = page.getViewport({ scale: 1 });
-    const vp = page.getViewport({ scale: WIDTH / base.width });
+    const vp = page.getViewport({ scale: width / base.width });
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(vp.width);
     canvas.height = Math.round(vp.height);
@@ -24,8 +30,7 @@ async function firstPage(path: string): Promise<number[]> {
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvas, canvasContext: ctx, viewport: vp } as Parameters<typeof page.render>[0]).promise;
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.88));
-    return blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : [];
+    return await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.9));
   } finally {
     clearTimeout(timer);
     task.destroy().catch(() => {});

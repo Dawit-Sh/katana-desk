@@ -7,6 +7,18 @@ type Item = { page: Page; icon: string; label: string; count?: number };
 const dayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+/** Days read in a row up to today (or yesterday, when today isn't read yet). */
+export function streakOf(secs: Map<string, number>, today: Date) {
+  let streak = 0;
+  const d = new Date(today);
+  if (!(secs.get(dayKey(d)) ?? 0)) d.setDate(d.getDate() - 1); // today not read yet keeps yesterday's streak
+  while ((secs.get(dayKey(d)) ?? 0) > 0) {
+    streak++;
+    d.setDate(d.getDate() - 1);
+  }
+  return streak;
+}
+
 /** Streak, minutes this week (from Monday) and the last 28 days, from the reading time the reader records. */
 function stats(rd: ReadingDays | null) {
   const secs = new Map(rd?.days ?? []);
@@ -22,13 +34,7 @@ function stats(rd: ReadingDays | null) {
       title: `${d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}: ${m ? `${m} min` : "no reading"}`,
     });
   }
-  let streak = 0;
-  const d = new Date(today);
-  if (!(secs.get(dayKey(d)) ?? 0)) d.setDate(d.getDate() - 1); // today not read yet keeps yesterday's streak
-  while ((secs.get(dayKey(d)) ?? 0) > 0) {
-    streak++;
-    d.setDate(d.getDate() - 1);
-  }
+  const streak = streakOf(secs, today);
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
   let week = 0;

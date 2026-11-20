@@ -7,7 +7,43 @@ use std::sync::Mutex;
 
 pub struct Db(pub Mutex<Connection>);
 
-const SCHEMA_VERSION: i32 = 6;
+/// Milestone 7: the Journal's reading log (seconds and pages per day, hour and book), the day a book was
+/// finished, custom covers (kept on this PC; Grimmory's own covers are never touched) and reading lists.
+/// A book is keyed `b:<local id>` or `g:<Grimmory id>` in covers and lists.
+pub const SCHEMA_V7_LOG: &str = "
+CREATE TABLE IF NOT EXISTS reading_log (
+    day TEXT NOT NULL,
+    hour INTEGER NOT NULL,
+    book_id INTEGER NOT NULL,
+    seconds INTEGER NOT NULL DEFAULT 0,
+    pages INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, hour, book_id)
+);
+CREATE INDEX IF NOT EXISTS reading_log_book ON reading_log(book_id);
+";
+const SCHEMA_V7: &str = "
+ALTER TABLE books ADD COLUMN finished_at INTEGER;
+CREATE TABLE IF NOT EXISTS custom_covers (
+    key TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    source TEXT,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lists (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS list_books (
+    list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    book TEXT NOT NULL,
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (list_id, book)
+);
+";
+
+const SCHEMA_VERSION: i32 = 7;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -215,6 +251,11 @@ impl Db {
             // PDFs get their covers from PDF.js in the page, once (milestone 6), additive only
             conn.execute_batch("ALTER TABLE books ADD COLUMN cover_tried INTEGER NOT NULL DEFAULT 0;")?;
         }
+        if version < 7 {
+            // the Journal's reading log, finished books, custom covers and lists (milestone 7), additive only
+            conn.execute_batch(SCHEMA_V7_LOG)?;
+            conn.execute_batch(SCHEMA_V7)?;
+        }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))
     }
@@ -386,6 +427,9 @@ pub fn save_progress(
             _ => true,
         };
     let t = now();
+    if moved && fraction >= 0.995 {
+        conn.execute("UPDATE books SET finished_at = COALESCE(finished_at, ?2) WHERE id = ?1", params![id, now()])?;
+    }
     if moved {
         conn.execute(
             "UPDATE books SET location = ?2, fraction = ?3, chapter = ?4, opened_at = ?5, href = ?6, place_at = ?5,
@@ -407,12 +451,20 @@ pub fn mark_opened(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn add_reading(conn: &Connection, day: &str, seconds: i64) -> rusqlite::Result<()> {
+/// Reading time for a day, and (since milestone 7) for the hour and the book, with the pages turned.
+pub fn add_reading(conn: &Connection, day: &str, hour: u32, book_id: Option<i64>, seconds: i64, pages: i64) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO reading_days (day, seconds) VALUES (?1, ?2)
          ON CONFLICT(day) DO UPDATE SET seconds = seconds + excluded.seconds",
         params![day, seconds],
     )?;
+    if let Some(b) = book_id {
+        conn.execute(
+            "INSERT INTO reading_log (day, hour, book_id, seconds, pages) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(day, hour, book_id) DO UPDATE SET seconds = seconds + excluded.seconds, pages = pages + excluded.pages",
+            params![day, hour, b, seconds, pages],
+        )?;
+    }
     Ok(())
 }
 

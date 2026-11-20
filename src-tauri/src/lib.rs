@@ -1,15 +1,19 @@
 // Katana Desk, the desktop version of Katana.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+mod covers;
 mod db;
 mod dict;
 mod grimmory;
 mod highlights;
+mod journal;
 mod library;
+mod lists;
 mod marks;
 mod meta;
 mod pages;
 mod resumable;
+mod search;
 mod words;
 
 use db::{Book, Folder};
@@ -21,9 +25,9 @@ use tauri::{AppHandle, Manager, State};
 
 static MICA: AtomicBool = AtomicBool::new(false);
 
-type Res<T> = Result<T, String>;
+pub(crate) type Res<T> = Result<T, String>;
 
-fn err<E: std::fmt::Display>(e: E) -> String {
+pub(crate) fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
@@ -111,12 +115,15 @@ fn mark_opened(lib: State<Library>, id: i64) -> Res<()> {
     db::mark_opened(&conn, id).map_err(err)
 }
 
-/// Adds reading time to today (local date), for the reading card and the Journal.
+/// Adds reading time to today (local date and hour), for the reading card and the Journal: the book read
+/// and the pages turned in that time.
 #[tauri::command]
-fn add_reading(lib: State<Library>, seconds: i64) -> Res<()> {
-    let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+fn add_reading(lib: State<Library>, seconds: i64, book_id: Option<i64>, pages: Option<i64>) -> Res<()> {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    let day = now.format("%Y-%m-%d").to_string();
     let conn = lib.db.0.lock().unwrap();
-    db::add_reading(&conn, &day, seconds.clamp(0, 600)).map_err(err)
+    db::add_reading(&conn, &day, now.hour(), book_id, seconds.clamp(0, 600), pages.unwrap_or(0).clamp(0, 200)).map_err(err)
 }
 
 #[derive(Serialize)]
@@ -510,6 +517,132 @@ fn has_mica() -> bool {
     MICA.load(Ordering::Relaxed)
 }
 
+// ---------- milestone 7: Journal, search everything, a second window, backups ----------
+
+#[tauri::command]
+fn journal_stats(lib: State<Library>, period: String) -> Res<journal::Journal> {
+    let conn = lib.db.0.lock().unwrap();
+    journal::stats(&conn, chrono::Local::now().date_naive(), &period).map_err(err)
+}
+
+/// Writes the year's Journal as Markdown to `path`.
+#[tauri::command]
+fn journal_export(lib: State<Library>, path: String) -> Res<()> {
+    let md = {
+        let conn = lib.db.0.lock().unwrap();
+        let j = journal::stats(&conn, chrono::Local::now().date_naive(), "year").map_err(err)?;
+        journal::markdown(&j, &chrono::Local::now().format("%-d %B %Y").to_string())
+    };
+    std::fs::write(&path, md).map_err(|e| format!("The file couldn't be written: {e}"))
+}
+
+#[tauri::command]
+fn search_everything(lib: State<Library>, q: String) -> Res<search::Found> {
+    let conn = lib.db.0.lock().unwrap();
+    search::search(&conn, &q).map_err(err)
+}
+
+/// Percent-encodes everything but letters, digits and `-_.~` (for a place in a window's address).
+fn url_part(s: &str) -> String {
+    s.bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect()
+}
+
+/// Mica behind a window's bar and sidebar (Windows 11 only); off when glass is switched off in Settings.
+fn glass(w: &tauri::WebviewWindow, on: bool) -> bool {
+    #[cfg(windows)]
+    {
+        use tauri::window::{Effect, EffectsBuilder};
+        if on {
+            return w.set_effects(EffectsBuilder::new().effect(Effect::Mica).build()).is_ok();
+        }
+        let _ = w.set_effects(None::<tauri::utils::config::WindowEffectsConfig>);
+    }
+    #[cfg(not(windows))]
+    let _ = (w, on);
+    false
+}
+
+/// Ctrl+click: a book (or a place in it) in a window of its own. One window is the default.
+#[tauri::command]
+async fn open_book_window(app: AppHandle, book_id: i64, at: Option<String>, title: Option<String>) -> Res<()> {
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    let mut url = format!("index.html?book={book_id}");
+    if let Some(a) = at.filter(|a| !a.is_empty()) {
+        url.push_str(&format!("&at={}", url_part(&a)));
+    }
+    let w = tauri::WebviewWindowBuilder::new(&app, format!("book-{book_id}-{n}"), tauri::WebviewUrl::App(url.into()))
+        .title(title.map(|t| format!("{t} · Katana Desk")).unwrap_or_else(|| "Katana Desk".into()))
+        .inner_size(1100.0, 800.0)
+        .min_inner_size(640.0, 480.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .visible(false)
+        .build()
+        .map_err(err)?;
+    if std::env::var("KATANA_QUIET").is_ok() {
+        let _ = w.set_position(tauri::PhysicalPosition::new(-4000, -4000));
+        let _ = w.set_skip_taskbar(true);
+        let _ = w.set_focusable(false);
+    }
+    if MICA.load(Ordering::Relaxed) {
+        glass(&w, true);
+    }
+    // shown by the page once drawn; if it never says so, shown anyway
+    let w2 = w.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        if !w2.is_visible().unwrap_or(true) {
+            let _ = w2.show();
+        }
+    });
+    Ok(())
+}
+
+/// Settings › Appearance › Glass: Mica on or off in every window.
+#[tauri::command]
+fn set_glass(app: AppHandle, lib: State<Library>, on: bool) -> Res<bool> {
+    db::set_setting(&lib.db.0.lock().unwrap(), "app.glass", if on { "1" } else { "0" }).map_err(err)?;
+    let mut ok = false;
+    for w in app.webview_windows().values() {
+        ok = glass(w, on) || ok;
+    }
+    MICA.store(on && ok, Ordering::Relaxed);
+    Ok(on && ok)
+}
+
+/// A copy of the whole library database (places, marks, words, the Journal, lists, settings) at `path`.
+#[tauri::command]
+fn backup_library(lib: State<Library>, path: String) -> Res<()> {
+    let _ = std::fs::remove_file(&path);
+    let conn = lib.db.0.lock().unwrap();
+    conn.execute("VACUUM INTO ?1", [&path]).map(|_| ()).map_err(|e| format!("The copy couldn't be written: {e}"))
+}
+
+/// Every book's marks as Markdown files in `dir`, one per book. Returns how many files.
+#[tauri::command]
+fn export_all_marks(lib: State<Library>, dir: String) -> Res<usize> {
+    let conn = lib.db.0.lock().unwrap();
+    let date = chrono::Local::now();
+    let mut n = 0;
+    for mb in highlights::marked_books(&conn).map_err(err)? {
+        let Some(b) = db::book(&conn, mb.id).map_err(err)? else { continue };
+        let bm = marks::list(&conn, b.id).map_err(err)?;
+        let hl = highlights::list(&conn, b.id).map_err(err)?;
+        if bm.is_empty() && hl.is_empty() {
+            continue;
+        }
+        let md = highlights::markdown(&b.title, b.author.as_deref(), &bm, &hl, &date.format("%-d %B %Y").to_string());
+        let name = highlights::file_name(&b.title, &date.format("%Y-%m-%d").to_string());
+        std::fs::write(std::path::Path::new(&dir).join(name), md).map_err(|e| format!("A file couldn't be written: {e}"))?;
+        n += 1;
+    }
+    Ok(n)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -558,13 +691,10 @@ pub fn run() {
                     let _ = win.set_skip_taskbar(true);
                     let _ = win.set_focusable(false);
                 }
-                // Mica behind the title bar and the sidebar (Windows 11)
-                #[cfg(windows)]
-                {
-                    use tauri::window::{Effect, EffectsBuilder};
-                    if win.set_effects(EffectsBuilder::new().effect(Effect::Mica).build()).is_ok() {
-                        MICA.store(true, Ordering::Relaxed);
-                    }
+                // Mica behind the title bar and the sidebar (Windows 11), unless switched off in Settings
+                let glass_on = db::get_setting(&db.0.lock().unwrap(), "app.glass").ok().flatten().as_deref() != Some("0");
+                if glass_on && glass(&win, true) {
+                    MICA.store(true, Ordering::Relaxed);
                 }
                 // The page shows the window once it has drawn (no white flash). If it never says so, show it anyway.
                 let w = win.clone();
@@ -656,7 +786,28 @@ pub fn run() {
             pages::djvu_text,
             pages::page_book_closed,
             pages::pdf_cover,
-            pages::pdf_covers_todo
+            pages::pdf_covers_todo,
+            journal_stats,
+            journal_export,
+            search_everything,
+            open_book_window,
+            set_glass,
+            backup_library,
+            export_all_marks,
+            covers::covers_custom,
+            covers::cover_save,
+            covers::cover_reset,
+            covers::cover_source,
+            covers::cover_file,
+            covers::openlibrary_search,
+            covers::openlibrary_cover,
+            lists::lists,
+            lists::list_create,
+            lists::list_rename,
+            lists::list_delete,
+            lists::list_restore,
+            lists::list_add,
+            lists::list_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running Katana Desk");

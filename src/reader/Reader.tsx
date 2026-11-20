@@ -189,6 +189,8 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   const [totalPages, setTotalPages] = useState(0);
   const last = useRef<Relocate | null>(null);
   const lastTurn = useRef(Date.now());
+  /** pages turned since the last reading tick, for the Journal's pages an hour */
+  const turns = useRef(0);
   // characters per page in the current layout, learned from chapters that fill several pages
   const perPage = useRef(0);
   const cols = useRef(1);
@@ -735,6 +737,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       const v = viewRef.current;
       if (!v?.renderer) return;
       lastTurn.current = Date.now();
+      turns.current++;
       acted.current = true;
       setNote(null);
       setSel(null);
@@ -1210,8 +1213,10 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     // Reading time for the reading card and the Journal: counted while the window is in front
     // and a page was turned in the last two minutes.
     const tick = window.setInterval(() => {
-      if (document.visibilityState === "visible" && document.hasFocus() && Date.now() - lastTurn.current < 120_000)
-        api.addReading(15).catch(() => {});
+      if (document.visibilityState === "visible" && document.hasFocus() && Date.now() - lastTurn.current < 120_000) {
+        api.addReading(15, book.id, turns.current).catch(() => {});
+        turns.current = 0;
+      }
     }, 15_000);
 
     return () => {

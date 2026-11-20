@@ -88,7 +88,7 @@ export const api = {
   saveProgress: (id: number, location: string, fraction: number, chapter: string | null, href: string | null, turned: boolean) =>
     invoke<void>("save_progress", { id, location, fraction, chapter, href, turned }),
   markOpened: (id: number) => invoke<void>("mark_opened", { id }),
-  addReading: (seconds: number) => invoke<void>("add_reading", { seconds }),
+  addReading: (seconds: number, bookId: number, pages: number) => invoke<void>("add_reading", { seconds, bookId, pages }),
   readingDays: () => invoke<ReadingDays>("reading_days"),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
@@ -137,3 +137,96 @@ export const gReadable = (b: { fileType: string | null; fileName: string | null 
 export const READABLE = new Set(["epub", "mobi", "azw3", "azw", "fb2", "fbz", "cbz", "cbr", "pdf", "djvu"]);
 
 export const BOOK_EXTENSIONS = ["epub", "mobi", "azw3", "azw", "fb2", "fbz", "zip", "cbz", "cbr", "pdf", "djvu", "djv"];
+
+// ---------- milestone 7 ----------
+
+export type JBook = {
+  bookId: number;
+  title: string;
+  author: string | null;
+  format: string;
+  cover: string | null;
+  grimmoryId: number | null;
+  fraction: number | null;
+  finishedAt: number | null;
+  seconds: number;
+  days: number;
+  pages: number;
+  highlights: number;
+  bookmarks: number;
+  lastDay: string;
+};
+export type Period = "week" | "month" | "year";
+export type Journal = {
+  today: string;
+  year: number;
+  days: [string, number][];
+  period: Period;
+  from: string;
+  periodSeconds: number;
+  weekSeconds: number;
+  yearSeconds: number;
+  finishedYear: number;
+  finishedPeriod: number;
+  books: JBook[];
+  weekdays: number[];
+  weekdayCount: number[];
+  hours: number[];
+  months: number[];
+  speed: [string, number, number][];
+  bestDay: [string, number] | null;
+  unloggedSeconds: number;
+};
+
+export type Hit = {
+  kind: "book" | "gbook" | "author" | "highlight" | "note" | "bookmark" | "word";
+  id: number;
+  bookId: number | null;
+  title: string;
+  sub: string;
+  at: string | null;
+  format: string | null;
+  color: string | null;
+  count: number;
+  uuid: string | null;
+};
+export type Found = { books: Hit[]; authors: Hit[]; marks: Hit[]; words: Hit[] };
+
+export type CustomCover = { key: string; path: string; source: string | null; updatedAt: number };
+export type OlCover = { coverId: number; title: string; author: string | null; year: number | null };
+export type List = { id: number; name: string; createdAt: number; updatedAt: number; books: string[] };
+
+/** A book's key in custom covers and lists: `b:<local id>` for a file here, `g:<Grimmory id>` for a Grimmory book. */
+export const bookKey = (b: { id: number; source?: string; grimmoryId?: number | null }) =>
+  b.source === "grimmory" && b.grimmoryId != null ? `g:${b.grimmoryId}` : `b:${b.id}`;
+
+export const m7 = {
+  journal: (period: Period) => invoke<Journal>("journal_stats", { period }),
+  journalExport: (path: string) => invoke<void>("journal_export", { path }),
+  search: (q: string) => invoke<Found>("search_everything", { q }),
+  openWindow: (bookId: number, at: string | null = null, title: string | null = null) => invoke<void>("open_book_window", { bookId, at, title }),
+  setGlass: (on: boolean) => invoke<boolean>("set_glass", { on }),
+  backup: (path: string) => invoke<void>("backup_library", { path }),
+  exportAllMarks: (dir: string) => invoke<number>("export_all_marks", { dir }),
+};
+
+export const covers = {
+  custom: () => invoke<CustomCover[]>("covers_custom"),
+  save: (key: string, jpeg: Uint8Array, source: string) => invoke<CustomCover>("cover_save", jpeg, { headers: { key, source } }),
+  reset: (key: string) => invoke<void>("cover_reset", { key }),
+  source: (which: "grimmory" | "book" | "first", bookId: number | null, grimmoryId: number | null) =>
+    invoke<ArrayBuffer>("cover_source", { which, bookId, grimmoryId }),
+  file: (path: string) => invoke<ArrayBuffer>("cover_file", { path }),
+  olSearch: (title: string, author: string | null) => invoke<OlCover[]>("openlibrary_search", { title, author }),
+  olCover: (id: number, size: "M" | "L") => invoke<ArrayBuffer>("openlibrary_cover", { id, size }),
+};
+
+export const lists = {
+  all: () => invoke<List[]>("lists"),
+  create: (name: string, book: string | null = null) => invoke<number>("list_create", { name, book }),
+  rename: (id: number, name: string) => invoke<void>("list_rename", { id, name }),
+  remove: (id: number) => invoke<void>("list_delete", { id }),
+  restore: (l: List) => invoke<number>("list_restore", { name: l.name, createdAt: l.createdAt, books: l.books }),
+  add: (id: number, book: string) => invoke<void>("list_add", { id, book }),
+  take: (id: number, book: string) => invoke<void>("list_remove", { id, book }),
+};

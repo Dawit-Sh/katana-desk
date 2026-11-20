@@ -90,3 +90,18 @@ pub fn handle(ctx: UriSchemeContext<'_, Wry>, req: Request<Vec<u8>>, responder: 
         }
     });
 }
+
+/// Grimmory's cover at its full size (up to 1000x1500), for Change cover. Read only: nothing on
+/// Grimmory changes.
+pub async fn full(app: &AppHandle, id: i64) -> GRes<Vec<u8>> {
+    let resp = send(app, move |c, base, tok| {
+        c.get(format!("{base}/api/v1/media/book/{id}/cover"))
+            .bearer_auth(tok)
+            .query(&[("token", tok)])
+    })
+    .await?;
+    if !resp.status().is_success() {
+        return Err(GErr::Server(resp.status().as_u16(), String::new()));
+    }
+    Ok(resp.bytes().await.map_err(|e| GErr::Offline(e.to_string()))?.to_vec())
+}

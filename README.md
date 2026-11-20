@@ -145,12 +145,44 @@ The dictionary files are made once by `tools/build-dictionary.py` (see its notes
   see `src-tauri/djvu/djvulibre/KATANA.md`. A CBR that is really a ZIP opens directly; a RAR one is unpacked once into
   the app's data folder by bsdtar (Windows' own `tar.exe` reads RAR), or unrar, 7-Zip or unar on Linux.
 
+## Milestone 7: the rest
+
+- **Journal**: the whole year of reading days (a square a day, darker the longer you read), the streak, this week, this
+  year and books finished, the books of the week, month or year (time, days, highlights and bookmarks made, how far, a
+  click opens one), and three charts: the days of the week you read (on average), the hours each month, and pages an
+  hour week by week. Beside them: your words (learned, learning, new, reviews, the share remembered on the first try,
+  Review), going back to your highlights (times this year, notes reread, highlights edited, the most revisited) and the
+  hours of the day you read. Counted from the reader's 15-second ticks, which now keep the book, the hour and the pages
+  turned (EPUB and the page view alike). Export writes the year as Markdown.
+- **Ctrl K, search everything**, anywhere (a book open too): books here and on Grimmory, authors, highlights, notes,
+  bookmarks and My words, in every format (EPUB, MOBI, PDF, DjVu, comics). ↑ ↓ move, Enter opens (a mark opens the book
+  at it, and counts as going back to it in the Journal), Ctrl Enter opens a book in a window of its own. Type `>` for
+  commands (go to a page, the keyboard map, add a folder, a theme, sync now).
+- **Settings**, a section at a time: General (what Katana Desk opens on, the app's size), Appearance (eight themes drawn
+  as little windows: Follow Windows, Graphite, Paper, Sepia Reading, OLED Reader, High Contrast, Blueprint, Detective
+  File; cover size in the library; glass sidebar), Reading defaults (the Aa panel for books without their own),
+  Sources (Grimmory, Local folders), Dictionaries, Sync and backup (what syncs, Sync now, a backup of the whole library
+  file, every book's marks as Markdown), Keyboard, About (credits and licences).
+- **Lists**: your own reading lists, Local and Grimmory books together, from a book's page (Add to a list), a cover's
+  right-click menu, or the Lists page (new, rename, remove with Undo, take a book off).
+- **Change cover**, from the button on the cover in a book's page or a cover's right-click menu: Grimmory's cover (at
+  full size), the book's own cover or its first page (PDF by PDF.js; DjVu and comics), your own picture (drop it, paste
+  it with Ctrl V, or choose a file) or Open Library covers found by title and author
+  ([Open Library](https://openlibrary.org/dev/docs/api/covers)). Move and zoom it in a 2:3 frame, see it in the library
+  and on the reading card, or go Back to the original. Custom covers are saved on this PC (600 by 900 JPEG); Grimmory's
+  covers are never touched.
+- **The keyboard map**: `?` or Ctrl / anywhere, and in Settings › Keyboard.
+- **A second window**: Ctrl+click a cover, a mark or a search result (or Open in a new window from a cover's menu) and
+  the book opens in a window of its own; closing the book closes that window. One window stays the default.
+- **MOBI, AZW and AZW3 covers**, titles and authors are read from the file (its EXTH header and image records).
+- Outside a book, Ctrl + and Ctrl − change the app's size.
+
 ## Keys
 
 | Where | Keys |
 |---|---|
-| Anywhere | Ctrl K search · Ctrl O open a file · Ctrl , settings · F11 full screen |
-| Library | Arrows move between covers · Space or a click shows the book's page · Enter or a double-click opens it · Esc closes the page |
+| Anywhere | Ctrl K search everything · ? or Ctrl / the keyboard map · Ctrl O open a file · Ctrl , settings · Ctrl + / Ctrl − / Ctrl 0 app size (outside a book) · F11 full screen |
+| Library | Arrows move between covers · Space or a click shows the book's page · Enter or a double-click opens it · Ctrl+click opens it in a new window · right-click for its menu · Esc closes the page |
 | Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Ctrl B bookmark · Ctrl F search · Alt ← back to where you jumped from · Ctrl + / Ctrl − / Ctrl 0 text size · a double-click on a word looks it up · Esc closes a card, note or panel, then the book |
 | PDF, DjVu, comics | ↓ ↑ scroll, then turn · → ← the next or previous page (swapped right to left) · Space Page Down Page Up a screen or a page · Home End · Ctrl + / Ctrl − zoom, Ctrl 0 fits again, Ctrl and the wheel · Ctrl F find · Ctrl B bookmark · Alt ← back |
 | Review cards | Space shows the meaning · 1 Again · 2 I know it · Esc closes |

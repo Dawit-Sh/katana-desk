@@ -68,6 +68,7 @@ export function AaPanel({
   fixed,
   onSaveDefault,
   onUseDefault,
+  footer,
 }: {
   prefs: Prefs;
   set: (p: Partial<Prefs>) => void;
@@ -78,6 +79,8 @@ export function AaPanel({
   fixed: boolean;
   onSaveDefault: () => void;
   onUseDefault: () => void;
+  /** in place of the save-as-default row (Settings › Reading defaults) */
+  footer?: ReactNode;
 }) {
   const layouts: { id: LayoutId; name: string; title: string; pic: ReactNode }[] = [
     {
@@ -213,7 +216,7 @@ export function AaPanel({
           </div>
         </>
       )}
-      <div className="pfoot">
+      {footer ?? <div className="pfoot">
         <button type="button" className="pill tone" onClick={onSaveDefault} disabled={isDefault} title="Books without their own settings open like this">
           <i className="ms">check</i>
           {isDefault ? "This is the default" : "Save as default"}
@@ -223,7 +226,7 @@ export function AaPanel({
             Use the default
           </button>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

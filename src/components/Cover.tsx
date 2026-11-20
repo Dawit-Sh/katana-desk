@@ -1,6 +1,14 @@
 import { useState } from "react";
 import type { Book, GBook } from "../lib/api";
-import { fileUrl, gcoverUrl } from "../lib/api";
+import { bookKey, fileUrl, gcoverUrl } from "../lib/api";
+import { useStore } from "../lib/store";
+
+/** A custom cover given on this PC (Change cover), looked up under the book's own key and its twin's. */
+export const useCustom = (keys: (string | null)[]) =>
+  useStore((s) => {
+    for (const k of keys) if (k && s.customCovers[k]) return s.customCovers[k];
+    return null;
+  });
 
 // Drawn covers for books without a picture, in the canvas's cover colours: [from, to, text].
 const PALETTE: [string, string, string][] = [
@@ -32,19 +40,21 @@ export const coverColors = (b: Book) => {
 /** The title size on a drawn cover shrinks for long titles. */
 const titleSize = (t: string, base: number) => (t.length > 46 ? base * 0.72 : t.length > 26 ? base * 0.85 : base);
 
-type Props = { book: Book; size?: "" | "l" | "m"; progress?: boolean };
+type Props = { book: Book; size?: "" | "l" | "m" | "s" | "xs"; progress?: boolean };
 
 export function Cover({ book, size = "", progress = true }: Props) {
-  const comic = book.format === "cbz";
+  const custom = useCustom([bookKey(book), book.grimmoryId != null ? `g:${book.grimmoryId}` : null, `b:${book.id}`]);
+  const comic = book.format === "cbz" || book.format === "cbr";
   const frac = book.fraction ?? 0;
   const base = size === "l" ? 11 : size === "m" ? 8 : 15;
   const pr = progress && frac > 0.004 && frac < 0.995 && (
     <span className="pr"><i style={{ width: `${Math.round(frac * 100)}%` }} /></span>
   );
-  if (book.cover) {
+  const pic = custom ?? book.cover;
+  if (pic) {
     return (
       <div className={`cv img ${size} ${comic ? "comic" : ""}`}>
-        <img src={fileUrl(book.cover)} alt="" loading="lazy" draggable={false} />
+        <img src={fileUrl(pic)} alt="" loading="lazy" draggable={false} />
         {pr}
       </div>
     );
@@ -61,10 +71,11 @@ export function Cover({ book, size = "", progress = true }: Props) {
 
 /** A small book peeking out of a folder tile. */
 export function Peek({ book, side }: { book: Book; side: "a" | "b" }) {
-  if (book.cover)
+  const custom = useCustom([bookKey(book), `b:${book.id}`]);
+  if (custom || book.cover)
     return (
       <span className={`peek ${side}`}>
-        <img src={fileUrl(book.cover)} alt="" loading="lazy" draggable={false} />
+        <img src={fileUrl(custom ?? book.cover!)} alt="" loading="lazy" draggable={false} />
       </span>
     );
   return (
@@ -76,8 +87,9 @@ export function Peek({ book, side }: { book: Book; side: "a" | "b" }) {
 }
 
 /** A Grimmory book's cover: drawn at once, Grimmory's picture laid over it as soon as it's on this PC. */
-export function GCover({ book, size = "", progress }: { book: GBook; size?: "" | "l" | "m" | "s"; progress?: number | null }) {
+export function GCover({ book, size = "", progress }: { book: GBook; size?: "" | "l" | "m" | "s" | "xs"; progress?: number | null }) {
   const [failed, setFailed] = useState(false);
+  const custom = useCustom([`g:${book.id}`, book.localId != null ? `b:${book.localId}` : null]);
   const comic = book.fileType === "CBX";
   const base = size === "l" ? 11 : size === "m" ? 8 : size === "s" ? 6.5 : 15;
   const frac = progress ?? 0;
@@ -86,7 +98,9 @@ export function GCover({ book, size = "", progress }: { book: GBook; size?: "" |
     <div className={`cv ${size} ${comic ? "comic" : ""}`} style={colors}>
       <b style={{ fontSize: titleSize(book.title, base) }}>{book.title}</b>
       <s>{book.authors ?? ""}</s>
-      {!failed && (
+      {custom ? (
+        <img src={fileUrl(custom)} alt="" loading="lazy" draggable={false} />
+      ) : !failed && (
         <img
           key={book.coverV ?? 0}
           src={gcoverUrl(book.id, book.coverV)}

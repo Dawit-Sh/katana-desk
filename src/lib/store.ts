@@ -1,8 +1,11 @@
 import { create } from "zustand";
-import { api, grimmory, type Book, type Catalog, type Dl, type Folder, type GStatus, type ScanState } from "./api";
+import { api, covers, grimmory, lists, type Book, type Catalog, type Dl, type Folder, type GBook, type GStatus, type List, type ScanState } from "./api";
 
 export type Page = "grimmory" | "local" | "lists" | "bookmarks" | "words" | "journal" | "settings";
-export type ThemePref = "system" | "graphite" | "paper";
+export type ThemePref = "system" | "graphite" | "paper" | "sepia" | "oled" | "contrast" | "blueprint" | "detective";
+export type CoverSize = "s" | "m" | "l";
+/** The book Change cover is open for. `key`: `b:<local id>` or `g:<Grimmory id>`. */
+export type CoverTarget = { key: string; bookId: number | null; grimmoryId: number | null; title: string; author: string | null; format: string };
 
 /** Where you are in Local: an added folder (or the top) and the folders below it. */
 export type Place = { folderId: number | null; sub: string[] };
@@ -58,7 +61,27 @@ type State = {
   setThemePref: (t: ThemePref) => void;
   setFolded: (f: boolean) => void;
   setDropping: (d: boolean) => void;
+  // milestone 7
+  /** custom covers on this PC: book key -> picture file */
+  customCovers: Record<string, string>;
+  loadCovers: () => Promise<void>;
+  lists: List[];
+  loadLists: () => Promise<void>;
+  palette: boolean;
+  setPalette: (p: boolean) => void;
+  keymap: boolean;
+  setKeymap: (k: boolean) => void;
+  coverFor: CoverTarget | null;
+  setCoverFor: (t: CoverTarget | null) => void;
+  coverSize: CoverSize;
+  setCoverSize: (c: CoverSize) => void;
+  /** a book's window of its own: no library, the reader only */
+  bookWindow: boolean;
+  /** the right-click menu of a cover */
+  menu: BookMenuAt | null;
+  setMenu: (m: BookMenuAt | null) => void;
 };
+export type BookMenuAt = { x: number; y: number; local?: Book; g?: GBook };
 
 export const useStore = create<State>((set, get) => ({
   folders: [],
@@ -157,6 +180,28 @@ export const useStore = create<State>((set, get) => ({
     api.setSetting("sidebarFolded", folded ? "1" : "0");
   },
   setDropping: (dropping) => set({ dropping }),
+  customCovers: {},
+  loadCovers: async () => {
+    const list = await covers.custom();
+    set({ customCovers: Object.fromEntries(list.map((c) => [c.key, c.path])) });
+  },
+  lists: [],
+  loadLists: async () => set({ lists: await lists.all() }),
+  palette: false,
+  setPalette: (palette) => set({ palette }),
+  keymap: false,
+  setKeymap: (keymap) => set({ keymap }),
+  coverFor: null,
+  setCoverFor: (coverFor) => set({ coverFor }),
+  coverSize: "l",
+  setCoverSize: (coverSize) => {
+    set({ coverSize });
+    document.documentElement.dataset.covers = coverSize;
+    api.setSetting("library.coverSize", coverSize);
+  },
+  bookWindow: false,
+  menu: null,
+  setMenu: (menu) => set({ menu }),
 }));
 
 // dev builds only: lets test runs over the debug port open a book by id
