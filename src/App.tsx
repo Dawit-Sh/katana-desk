@@ -8,6 +8,7 @@ import { TitleBar } from "./components/TitleBar";
 import { Rail, Sidebar } from "./components/Sidebar";
 import { LocalPage, addBooks } from "./pages/LocalPage";
 import { SettingsPage, SoonPage } from "./pages/OtherPages";
+import { BookmarksPage } from "./pages/BookmarksPage";
 import { GrimmoryPage } from "./pages/GrimmoryPage";
 import { Reader } from "./reader/Reader";
 
@@ -154,6 +155,8 @@ export function App() {
         return <GrimmoryPage />;
       case "settings":
         return <SettingsPage />;
+      case "bookmarks":
+        return <BookmarksPage />;
       default:
         return <SoonPage page={s.page} />;
     }
@@ -162,7 +165,7 @@ export function App() {
   return (
     <div className="app">
       {reading ? (
-        <Reader key={reading.id} book={reading} onClose={s.closeReader} />
+        <Reader key={reading.id} book={reading} onClose={s.closeReader} startAt={s.openAt} />
       ) : (
         <>
           <TitleBar

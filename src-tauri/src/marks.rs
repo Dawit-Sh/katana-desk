@@ -83,7 +83,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<Bookmark> {
 
 /// A random v4 UUID. std's RandomState is seeded from the OS's random source on every platform Tauri
 /// runs on, and each one built in a thread gets fresh keys, so no extra crate is needed.
-fn uuid() -> String {
+pub fn new_uuid() -> String {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
     let mut b = [0u8; 16];
@@ -131,7 +131,7 @@ pub fn add(conn: &Connection, m: &NewMark) -> rusqlite::Result<Bookmark> {
     conn.execute(
         "INSERT INTO bookmarks (uuid, book_id, cfi, fraction, page_label, chapter, excerpt, created_at, updated_at, sync_state)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 'local')",
-        params![uuid(), m.book_id, m.cfi, m.fraction, m.page_label, m.chapter, m.excerpt, t],
+        params![new_uuid(), m.book_id, m.cfi, m.fraction, m.page_label, m.chapter, m.excerpt, t],
     )?;
     let id = conn.last_insert_rowid();
     conn.query_row(&format!("SELECT {COLS} FROM bookmarks WHERE id = ?1"), [id], row)
@@ -162,9 +162,39 @@ pub fn remove(conn: &Connection, id: i64) -> rusqlite::Result<()> {
 pub fn update(conn: &Connection, id: i64, title: Option<&str>, note: Option<&str>) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE bookmarks SET title = ?2, note = ?3, updated_at = ?4,
-             sync_state = CASE sync_state WHEN 'synced' THEN 'dirty' ELSE sync_state END
+             sync_state = CASE sync_state WHEN 'synced' THEN 'dirty' WHEN 'kept' THEN 'local' ELSE sync_state END
          WHERE id = ?1",
-        params![id, title, note, now()],
+        params![id, clean(title), clean(note), now()],
+    )?;
+    Ok(())
+}
+
+fn clean(s: Option<&str>) -> Option<String> {
+    s.map(str::trim).filter(|s| !s.is_empty()).map(String::from)
+}
+
+/// The book a mark belongs to (`table`: bookmarks or highlights).
+pub fn book_of(conn: &Connection, table: &str, id: i64) -> Option<i64> {
+    let table = if table == "highlights" { "highlights" } else { "bookmarks" };
+    conn.query_row(&format!("SELECT book_id FROM {table} WHERE id = ?1"), [id], |r| r.get(0)).optional().ok().flatten()
+}
+
+/// Where a bookmark from Grimmory sits, worked out by the reader. Not a change: the sync state stays.
+/// A name that is only its chapter (the web reader names its own that way) isn't kept as a name.
+pub fn set_place(
+    conn: &Connection,
+    id: i64,
+    fraction: Option<f64>,
+    page_label: Option<&str>,
+    chapter: Option<&str>,
+    excerpt: Option<&str>,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE bookmarks SET fraction = COALESCE(?2, fraction), page_label = COALESCE(?3, page_label),
+             chapter = COALESCE(chapter, ?4), excerpt = COALESCE(excerpt, ?5),
+             title = CASE WHEN title = COALESCE(chapter, ?4) THEN NULL ELSE title END
+         WHERE id = ?1",
+        params![id, fraction, page_label, chapter, excerpt],
     )?;
     Ok(())
 }

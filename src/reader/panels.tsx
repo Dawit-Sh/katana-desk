@@ -1,8 +1,8 @@
 // The reader's panels: they float over the page, and a pin docks them beside it (the page moves over).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Overlayer } from "foliate-js/overlayer.js";
-import { fmtWhen } from "../lib/format";
-import type { Bookmark } from "./marks";
+import type { Bookmark, Highlight } from "./marks";
+import { MarkRows, Tabs, allMarks, byPlace, inTab, matches, type Mark, type Tab } from "./marklist";
 
 // biome-ignore lint: foliate-js has no types
 type FoliateView = HTMLElement & any;
@@ -317,92 +317,102 @@ export function SearchPanel({
   );
 }
 
-/** Bookmarks in this book (the marks panel; highlights and words join it in milestones 4 and 5). */
+/** The marks panel: a book's highlights, notes and bookmarks, with tabs, search, "You're here",
+ *  previous / next mark and the Markdown export. */
 export function MarksPanel({
-  marks,
+  highlights,
+  bookmarks,
   here,
   hereLabel,
+  hereCfi,
   fraction,
+  syncLine,
   onGo,
   onRemove,
+  onSaveBookmark,
+  onExport,
 }: {
-  marks: Bookmark[];
+  highlights: Highlight[];
+  bookmarks: Bookmark[];
   here: Set<number>;
   hereLabel: string;
+  hereCfi: string | null;
   fraction: number;
-  onGo: (b: Bookmark) => void;
-  onRemove: (b: Bookmark) => void;
+  syncLine: string | null;
+  onGo: (m: Mark) => void;
+  onRemove: (m: Mark) => void;
+  onSaveBookmark: (b: Bookmark, title: string | null, note: string | null) => void;
+  onExport: () => void;
 }) {
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState<Tab>("all");
   const needle = q.trim().toLowerCase();
-  const shown = needle
-    ? marks.filter((b) =>
-        [b.title, b.note, b.excerpt, b.chapter, b.pageLabel ? `page ${b.pageLabel} p. ${b.pageLabel}` : ""]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle),
-      )
-    : marks;
-  // "You're here" sits between the bookmarks before and after this page
-  const hereAt = shown.findIndex((b) => (b.fraction ?? 0) > fraction + 1e-9 && !here.has(b.id));
-  const step = (dir: 1 | -1) => {
-    const list = dir === 1 ? marks.filter((b) => (b.fraction ?? 0) > fraction + 1e-6 && !here.has(b.id)) : marks.filter((b) => (b.fraction ?? 0) < fraction - 1e-6 && !here.has(b.id));
-    const b = dir === 1 ? list[0] : list[list.length - 1];
-    if (b) onGo(b);
-  };
-  const row = (b: Bookmark) => (
-    <div key={b.id} className={`mr ${here.has(b.id) ? "here" : ""}`}>
-      <button type="button" className="mgo" onClick={() => onGo(b)}>
-        <i className="ms f ribbon-ic">bookmark</i>
-        <div>
-          <span className="mt">{b.title || (b.pageLabel ? `p. ${b.pageLabel}` : `${Math.round((b.fraction ?? 0) * 100)}%`)}{b.chapter ? <em> · {b.chapter}</em> : null}</span>
-          {b.excerpt && <q>{b.excerpt}</q>}
-          <small>{fmtWhen(b.createdAt)}</small>
-        </div>
-      </button>
-      <button type="button" className="pbtn del" aria-label="Remove the bookmark" title="Remove" onClick={() => onRemove(b)}>
-        <i className="ms">delete</i>
-      </button>
-    </div>
+  const all = useMemo(() => allMarks(highlights, bookmarks), [highlights, bookmarks]);
+  const counts = useMemo(
+    () => ({
+      all: all.length,
+      highlights: highlights.length,
+      notes: all.filter((m) => inTab(m, "notes")).length,
+      bookmarks: bookmarks.length,
+    }),
+    [all, highlights.length, bookmarks.length],
   );
+  const shown = all.filter((m) => inTab(m, tab) && matches(m, needle));
+  const now = { cfi: hereCfi ?? "", frac: fraction };
+  const after = (m: Mark) => (hereCfi ? byPlace(m, now) > 0 : (m.frac ?? 0) > fraction + 1e-9);
+  const onPage = (m: Mark) => m.kind === "bm" && here.has(m.b.id);
+  let hereAt: number | null = shown.findIndex((m) => after(m) && !onPage(m));
+  if (hereAt === -1) hereAt = shown.length;
+  if (needle || shown.some(onPage)) hereAt = null;
+  const step = (dir: 1 | -1) => {
+    const list = shown.filter((m) => !onPage(m) && (dir === 1 ? after(m) : !after(m) && !(m.kind === "hl" && hereCfi && byPlace(m, now) === 0)));
+    const m = dir === 1 ? list[0] : list[list.length - 1];
+    if (m) onGo(m);
+  };
+  const empty =
+    needle ? (
+      "Nothing matches."
+    ) : tab === "bookmarks" || (tab === "all" && !all.length) ? (
+      <>
+        Select words to highlight them. Press <kbd>Ctrl</kbd> <kbd>B</kbd>, click the page's top corner or the ribbon button to mark a page.
+      </>
+    ) : tab === "notes" ? (
+      "No notes yet. Click a highlight to add one."
+    ) : (
+      "No highlights yet. Select words and click a colour."
+    );
   return (
     <>
-      <div className="tabs" role="tablist">
-        <span className="on" role="tab" aria-selected="true">
-          Bookmarks<em>{marks.length}</em>
-        </span>
-      </div>
-      {marks.length > 3 && (
+      <Tabs tab={tab} setTab={setTab} counts={counts} />
+      {all.length > 3 && (
         <div className="sfield">
           <i className="ms">search</i>
-          <input value={q} placeholder="Search bookmarks" aria-label="Search bookmarks" onChange={(e) => setQ(e.target.value)} />
+          <input value={q} placeholder="Search marks" aria-label="Search marks" onChange={(e) => setQ(e.target.value)} />
+          {q && (
+            <button type="button" className="clear" aria-label="Clear" onClick={() => setQ("")}>
+              <i className="ms">close</i>
+            </button>
+          )}
         </div>
       )}
-      <div className="mrows">
-        {!marks.length && (
-          <div className="empty">
-            No bookmarks yet. Press <kbd>Ctrl</kbd> <kbd>B</kbd>, click the page's top corner or the ribbon button to mark a page.
-          </div>
+      <MarkRows marks={shown} here={here} hereAt={hereAt} hereLabel={hereLabel} onGo={onGo} onRemove={onRemove} onSaveBookmark={onSaveBookmark} empty={empty} />
+      <div className="pfoot">
+        <button type="button" className="pill tone" onClick={onExport} disabled={!all.length} title="Save this book's highlights, notes and bookmarks as a Markdown file">
+          <i className="ms">download</i>Export Markdown
+        </button>
+        <span className="grow" />
+        {all.length > 0 && (
+          <>
+            <button type="button" className="pill sq" aria-label="Previous mark" title="Previous mark" onClick={() => step(-1)}>
+              <i className="ms">chevron_left</i>
+            </button>
+            <button type="button" className="pill sq" aria-label="Next mark" title="Next mark" onClick={() => step(1)}>
+              <i className="ms">chevron_right</i>
+            </button>
+          </>
         )}
-        {shown.map((b, i) => (
-          <div key={b.id} style={{ display: "contents" }}>
-            {i === hereAt && !needle && <div className="herel">You're here · {hereLabel}</div>}
-            {row(b)}
-          </div>
-        ))}
-        {hereAt === -1 && !needle && marks.length > 0 && !marks.some((b) => here.has(b.id)) && <div className="herel">You're here · {hereLabel}</div>}
       </div>
-      {marks.length > 0 && (
-        <div className="pfoot">
-          <span className="grow" />
-          <button type="button" className="pill sq" aria-label="Previous bookmark" title="Previous bookmark" onClick={() => step(-1)}>
-            <i className="ms">chevron_left</i>
-          </button>
-          <button type="button" className="pill sq" aria-label="Next bookmark" title="Next bookmark" onClick={() => step(1)}>
-            <i className="ms">chevron_right</i>
-          </button>
-        </div>
-      )}
+      {syncLine && <div className="syncl">{syncLine}</div>}
     </>
   );
 }

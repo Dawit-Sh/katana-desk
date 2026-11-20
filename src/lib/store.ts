@@ -21,6 +21,8 @@ type State = {
   selectedId: number | null;
   sheetOpen: boolean;
   readingId: number | null;
+  /** a place to open the book at (a mark picked on the Bookmarks page) */
+  openAt: string | null;
   query: string;
   themePref: ThemePref;
   folded: boolean;
@@ -50,7 +52,7 @@ type State = {
   goPlace: (p: Place) => void;
   select: (id: number | null, sheet?: boolean) => void;
   closeSheet: () => void;
-  open: (id: number) => void;
+  open: (id: number, at?: string | null) => void;
   closeReader: () => void;
   setQuery: (q: string) => void;
   setThemePref: (t: ThemePref) => void;
@@ -68,6 +70,7 @@ export const useStore = create<State>((set, get) => ({
   selectedId: null,
   sheetOpen: false,
   readingId: null,
+  openAt: null,
   query: "",
   themePref: "system",
   folded: false,
@@ -135,9 +138,9 @@ export const useStore = create<State>((set, get) => ({
   goPlace: (place) => set({ place, page: "local", query: "" }),
   select: (id, sheet = true) => set({ selectedId: id, sheetOpen: id != null && sheet }),
   closeSheet: () => set({ sheetOpen: false }),
-  open: (id) => set({ readingId: id, selectedId: id }),
+  open: (id, at = null) => set({ readingId: id, selectedId: id, openAt: at }),
   closeReader: () => {
-    set({ readingId: null });
+    set({ readingId: null, openAt: null });
     get().reload();
   },
   // the search covers the source you're in (Grimmory or Local); from other pages, Grimmory when signed in

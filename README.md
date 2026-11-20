@@ -71,13 +71,35 @@ Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/sean
   it flips, so you can hop between the two places.
 - The reading place keeps syncing with Grimmory as in milestone 2; a jump counts as reading.
 
+## Milestone 4: Highlights and notes
+
+- Select words and the selection card shows above them: Highlight, Note, Copy, Look up (the built-in dictionary comes in
+  milestone 5), and five colour dots. One click on a dot highlights in that colour and the last style.
+- Four styles: highlight, underline, strike and squiggle, drawn by foliate-js's overlayer. On dark pages a highlight
+  lightens the words under it.
+- Click a highlight for its card: the styles as little pictures in its colour, the colours, its note (click to write,
+  Enter saves), Copy, and Delete with Undo.
+- The marks panel ("Marks in this book"): All, Highlights, Notes and Bookmarks, in reading order under their chapters,
+  with "You're here", search, previous and next mark, names and notes for bookmarks right in the list, and Export Markdown.
+- The Bookmarks page: every book with marks, a search across every mark of every book, and the picked book's marks; a mark
+  opens the book there.
+- Markdown export of a book's bookmarks (names, first words, notes) and highlights (under their chapters, with notes).
+- Highlights and bookmarks sync both ways with Grimmory for EPUBs (`/api/v1/annotations`, `/api/v1/bookmarks`, names and
+  notes), sharing them with Grimmory's web reader and KOReader. foliate-js's CFIs are the web reader's own, so places go
+  across as they are. The last change wins with a 2-minute margin, a removal on one side removes it on the other unless
+  it was changed there later, a lost answer is matched by place instead of sent twice, and a server that suddenly lacks
+  most of a book's marks is asked about instead of believed. Grimmory's zone-less times are never compared with this PC's
+  clock: they are first put on it with the server's own "now". MOBI, AZW3, FB2 and CBZ marks stay on this PC.
+
 ## Keys
 
 | Where | Keys |
 |---|---|
 | Anywhere | Ctrl K search · Ctrl O open a file · Ctrl , settings · F11 full screen |
 | Library | Arrows move between covers · Space or a click shows the book's page · Enter or a double-click opens it · Esc closes the page |
-| Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Ctrl B bookmark · Ctrl F search · Alt ← back to where you jumped from · Ctrl + / Ctrl − / Ctrl 0 text size · Esc closes a note or panel, then the book |
+| Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Ctrl B bookmark · Ctrl F search · Alt ← back to where you jumped from · Ctrl + / Ctrl − / Ctrl 0 text size · Esc closes a card, note or panel, then the book |
+| Words selected | H highlight · 1 to 5 in that colour · N with a note · C copy · L look up · Esc lets go |
+| A highlight's card | Delete removes it · Esc closes it |
 
 ## Build
 

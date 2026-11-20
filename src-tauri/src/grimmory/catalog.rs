@@ -488,6 +488,8 @@ async fn run(app: &AppHandle, full: bool) -> GRes<()> {
     for gid in moved {
         let _ = super::sync::pull_linked(app, gid).await;
     }
+    // highlights and bookmarks that changed on Grimmory, for the books on this PC
+    super::marks_sync::after_library_sync(app).await;
     emit_status(app);
     Ok(())
 }

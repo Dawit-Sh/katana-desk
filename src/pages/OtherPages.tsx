@@ -7,7 +7,6 @@ import { addFolder } from "./LocalPage";
 
 const SOON: Partial<Record<Page, { icon: string; title: string; text: string }>> = {
   lists: { icon: "checklist", title: "Lists", text: "Your reading lists come in a later version." },
-  bookmarks: { icon: "bookmarks", title: "Bookmarks", text: "Bookmarks across all your books come with highlights and notes, in a later version." },
   words: { icon: "dictionary", title: "My words", text: "Words you save from the built-in dictionaries come in a later version." },
   journal: {
     icon: "history",

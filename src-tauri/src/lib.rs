@@ -3,6 +3,7 @@
 
 mod db;
 mod grimmory;
+mod highlights;
 mod library;
 mod marks;
 mod meta;
@@ -164,6 +165,7 @@ fn bookmarks(lib: State<Library>, book_id: i64) -> Res<Vec<marks::Bookmark>> {
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 fn add_bookmark(
+    app: AppHandle,
     lib: State<Library>,
     book_id: i64,
     cfi: String,
@@ -181,19 +183,176 @@ fn add_bookmark(
         chapter: chapter.as_deref(),
         excerpt: excerpt.as_deref(),
     };
-    marks::add(&conn, &m).map_err(err)
+    let b = marks::add(&conn, &m).map_err(err)?;
+    drop(conn);
+    grimmory::marks_sync::schedule(&app, book_id);
+    Ok(b)
 }
 
 #[tauri::command]
-fn remove_bookmark(lib: State<Library>, id: i64) -> Res<()> {
-    let conn = lib.db.0.lock().unwrap();
-    marks::remove(&conn, id).map_err(err)
+fn remove_bookmark(app: AppHandle, lib: State<Library>, id: i64) -> Res<()> {
+    let book = {
+        let conn = lib.db.0.lock().unwrap();
+        let book = marks::book_of(&conn, "bookmarks", id);
+        marks::remove(&conn, id).map_err(err)?;
+        book
+    };
+    if let Some(b) = book {
+        grimmory::marks_sync::schedule(&app, b);
+    }
+    Ok(())
 }
 
 #[tauri::command]
-fn update_bookmark(lib: State<Library>, id: i64, title: Option<String>, note: Option<String>) -> Res<()> {
+fn update_bookmark(app: AppHandle, lib: State<Library>, id: i64, title: Option<String>, note: Option<String>) -> Res<()> {
+    let book = {
+        let conn = lib.db.0.lock().unwrap();
+        marks::update(&conn, id, title.as_deref(), note.as_deref()).map_err(err)?;
+        marks::book_of(&conn, "bookmarks", id)
+    };
+    if let Some(b) = book {
+        grimmory::marks_sync::schedule(&app, b);
+    }
+    Ok(())
+}
+
+// ---------- highlights (milestone 4) ----------
+
+#[tauri::command]
+fn highlights(lib: State<Library>, book_id: i64) -> Res<Vec<highlights::Highlight>> {
     let conn = lib.db.0.lock().unwrap();
-    marks::update(&conn, id, title.as_deref(), note.as_deref()).map_err(err)
+    highlights::list(&conn, book_id).map_err(err)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn add_highlight(
+    app: AppHandle,
+    lib: State<Library>,
+    book_id: i64,
+    cfi: String,
+    text: String,
+    chapter: Option<String>,
+    fraction: Option<f64>,
+    page_label: Option<String>,
+    color: String,
+    style: String,
+    note: Option<String>,
+) -> Res<highlights::Highlight> {
+    let h = {
+        let conn = lib.db.0.lock().unwrap();
+        let n = highlights::NewHighlight {
+            book_id,
+            cfi: &cfi,
+            text: &text,
+            chapter: chapter.as_deref(),
+            fraction,
+            page_label: page_label.as_deref(),
+            color: &color,
+            style: &style,
+            note: note.as_deref(),
+        };
+        highlights::add(&conn, &n).map_err(err)?
+    };
+    grimmory::marks_sync::schedule(&app, book_id);
+    Ok(h)
+}
+
+#[tauri::command]
+fn update_highlight(app: AppHandle, lib: State<Library>, id: i64, color: String, style: String, note: Option<String>) -> Res<Option<highlights::Highlight>> {
+    let h = {
+        let conn = lib.db.0.lock().unwrap();
+        highlights::update(&conn, id, &color, &style, note.as_deref()).map_err(err)?;
+        highlights::get(&conn, id).map_err(err)?
+    };
+    if let Some(h) = &h {
+        grimmory::marks_sync::schedule(&app, h.book_id);
+    }
+    Ok(h)
+}
+
+#[tauri::command]
+fn remove_highlight(app: AppHandle, lib: State<Library>, id: i64) -> Res<()> {
+    let book = {
+        let conn = lib.db.0.lock().unwrap();
+        let book = marks::book_of(&conn, "highlights", id);
+        highlights::remove(&conn, id).map_err(err)?;
+        book
+    };
+    if let Some(b) = book {
+        grimmory::marks_sync::schedule(&app, b);
+    }
+    Ok(())
+}
+
+/// Undo: a highlight just removed comes back.
+#[tauri::command]
+fn restore_highlight(app: AppHandle, lib: State<Library>, h: highlights::Highlight) -> Res<highlights::Highlight> {
+    let back = {
+        let conn = lib.db.0.lock().unwrap();
+        highlights::restore(&conn, &h).map_err(err)?
+    };
+    grimmory::marks_sync::schedule(&app, back.book_id);
+    Ok(back)
+}
+
+/// Where marks sit in the book, worked out by the reader for the ones that came from Grimmory.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarkPlace {
+    kind: String,
+    id: i64,
+    fraction: Option<f64>,
+    page_label: Option<String>,
+    chapter: Option<String>,
+    excerpt: Option<String>,
+}
+
+#[tauri::command]
+fn place_marks(lib: State<Library>, places: Vec<MarkPlace>) -> Res<()> {
+    let conn = lib.db.0.lock().unwrap();
+    for p in places {
+        if p.kind == "highlight" {
+            highlights::set_place(&conn, p.id, p.fraction, p.page_label.as_deref(), p.chapter.as_deref()).map_err(err)?;
+        } else {
+            marks::set_place(&conn, p.id, p.fraction, p.page_label.as_deref(), p.chapter.as_deref(), p.excerpt.as_deref()).map_err(err)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn marked_books(lib: State<Library>) -> Res<Vec<highlights::MarkedBook>> {
+    let conn = lib.db.0.lock().unwrap();
+    highlights::marked_books(&conn).map_err(err)
+}
+
+/// The books whose marks (or title) hold these words, for the Bookmarks page's search.
+#[tauri::command]
+fn search_marks(lib: State<Library>, q: String) -> Res<Vec<i64>> {
+    let conn = lib.db.0.lock().unwrap();
+    highlights::search_all(&conn, q.trim()).map_err(err)
+}
+
+/// A file name for a book's Markdown export.
+#[tauri::command]
+fn export_name(lib: State<Library>, book_id: i64) -> Res<String> {
+    let conn = lib.db.0.lock().unwrap();
+    let title = db::book(&conn, book_id).map_err(err)?.map(|b| b.title).unwrap_or_default();
+    Ok(highlights::file_name(&title, &chrono::Local::now().format("%Y-%m-%d").to_string()))
+}
+
+/// Writes a book's bookmarks, highlights and notes as Markdown to `path`.
+#[tauri::command]
+fn export_marks(lib: State<Library>, book_id: i64, path: String) -> Res<()> {
+    let md = {
+        let conn = lib.db.0.lock().unwrap();
+        let b = db::book(&conn, book_id).map_err(err)?.ok_or("The book isn't in the library any more.")?;
+        let bm = marks::list(&conn, book_id).map_err(err)?;
+        let hl = highlights::list(&conn, book_id).map_err(err)?;
+        highlights::markdown(&b.title, b.author.as_deref(), &bm, &hl, &chrono::Local::now().format("%-d %B %Y").to_string())
+    };
+    std::fs::write(&path, md).map_err(|e| format!("The file couldn't be written: {e}"))
 }
 
 #[derive(Serialize)]
@@ -307,6 +466,20 @@ pub fn run() {
             add_bookmark,
             remove_bookmark,
             update_bookmark,
+            highlights,
+            add_highlight,
+            update_highlight,
+            remove_highlight,
+            restore_highlight,
+            place_marks,
+            marked_books,
+            search_marks,
+            export_name,
+            export_marks,
+            grimmory::marks_sync::marks_sync_book,
+            grimmory::marks_sync::marks_lost,
+            grimmory::marks_sync::marks_lost_answer,
+            grimmory::marks_sync::marks_sync_state,
             reader_prefs,
             set_book_prefs,
             grimmory::grimmory_status,

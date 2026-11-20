@@ -14,7 +14,9 @@
 .strip.bot { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px }
 .strip.bot span:last-child { text-align: right }
 .page { flex: 1; min-height: 0; position: relative }
-.page foliate-view { position: absolute; inset: 0; display: block; color: var(--k-ptext); --overlayer-highlight-opacity: .42 }
+.page foliate-view { position: absolute; inset: 0; display: block; color: var(--k-ptext); --overlayer-highlight-opacity: .45; --overlayer-highlight-blend-mode: multiply }
+/* on a dark page a highlight lightens the words under it instead of muddying them */
+.rd[data-page-dark="1"] .page foliate-view { --overlayer-highlight-opacity: .55; --overlayer-highlight-blend-mode: screen }
 .rmsg { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; color: var(--k-var); padding: 0 40px }
 .rmsg .ms { font-size: 40px }
 .rmsg b { color: var(--k-on); font-size: 17px }
@@ -178,3 +180,66 @@
 .toc::-webkit-scrollbar, .hits::-webkit-scrollbar, .mrows::-webkit-scrollbar, .aa::-webkit-scrollbar, .fbody::-webkit-scrollbar { width: 10px }
 .toc::-webkit-scrollbar-thumb, .hits::-webkit-scrollbar-thumb, .mrows::-webkit-scrollbar-thumb, .aa::-webkit-scrollbar-thumb, .fbody::-webkit-scrollbar-thumb { background: var(--k-schh); border-radius: 5px; border: 3px solid transparent; background-clip: padding-box }
 .toc::-webkit-scrollbar-button, .hits::-webkit-scrollbar-button, .mrows::-webkit-scrollbar-button, .aa::-webkit-scrollbar-button, .fbody::-webkit-scrollbar-button { display: none }
+
+/* ---------- highlights and notes (milestone 4) ---------- */
+.tabs button { height: 32px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; font-size: 13px; font-weight: 500; background: var(--k-sch); white-space: nowrap }
+.tabs button:hover { background: var(--k-schh) }
+.tabs button.on { background: var(--k-pric); color: var(--k-onpric) }
+.tabs { flex-wrap: wrap }
+
+/* the cards over the page: radius 20 with 8 inside, so what's inside takes 12 */
+.rd .pop { position: absolute; z-index: 9; background: var(--k-sch); color: var(--k-on); border-radius: 20px; box-shadow: 0 12px 34px var(--k-shadow); padding: 8px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; animation: pin .12s ease-out; user-select: none }
+.pop .acts { display: flex; gap: 2px }
+.pop .act { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 10px 5px; border-radius: 12px; font-weight: 500; min-width: 68px; color: var(--k-on) }
+.pop .act:hover:not(:disabled) { background: var(--k-schh) }
+.pop .act:disabled { opacity: .45 }
+.pop .act .ms { font-size: 21px }
+.pop .act kbd { border: 0; padding: 0; background: none; font: 500 10px var(--font-ui); color: var(--k-dim) }
+.pop .dots { display: flex; gap: 10px; align-items: center; padding: 8px 10px 4px; border-top: 1px solid var(--k-outv); color: var(--k-var) }
+.pop .dots .hint { margin-left: 4px; font-size: 11.5px; white-space: nowrap }
+.dot { width: 24px; height: 24px; border-radius: 50%; background: var(--c); display: grid; place-items: center; flex: none; transition: transform .1s }
+.dot:hover { transform: scale(1.12) }
+.dot.on { box-shadow: 0 0 0 2px var(--k-sch), 0 0 0 4px var(--k-on) }
+.dot .dmark { width: 14px; height: 14px; fill: none; stroke: rgba(0, 0, 0, .6); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round }
+
+/* the highlight card: radius 28 with 12 inside, so what's inside takes 16 */
+.rd .pop.hcard { width: 360px; padding: 12px; gap: 12px; border-radius: 28px }
+.hcard .srow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px }
+.hcard .stile { height: 48px; border-radius: 16px; background: var(--k-schh); display: grid; place-items: center; outline-offset: 2px }
+.hcard .stile:hover { background: color-mix(in srgb, var(--k-schh) 85%, var(--k-on)) }
+.hcard .stile.on { outline: 2px solid var(--k-tint) }
+.spic { font: 500 19px var(--font-book); color: var(--k-on); line-height: 1.2 }
+.hcard .crow { display: flex; gap: 14px; padding: 2px 6px }
+.hcard .crow .dot { width: 26px; height: 26px }
+.hcard .note { display: grid; justify-items: start; gap: 4px; width: 100%; text-align: left; background: var(--k-schh); border-radius: 16px; padding: 10px 14px; font-size: 13.5px; line-height: 1.45; color: var(--k-on); user-select: text }
+.hcard button.note:hover { background: color-mix(in srgb, var(--k-schh) 88%, var(--k-on)) }
+.hcard .note .ntext { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto }
+.hcard .note small { color: var(--k-var); font-size: 11.5px }
+.hcard .note.empty { color: var(--k-var) }
+.hcard .nadd { display: inline-flex; align-items: center; gap: 8px }
+.hcard .nadd .ms { font-size: 19px }
+.hcard .note.edit { padding: 10px 10px 10px 14px }
+.hcard textarea, .bmf textarea, .bmf input { width: 100%; resize: vertical; min-height: 64px; background: transparent; border: 0; outline: 0; color: var(--k-on); font: 13.5px/1.45 var(--font-ui); user-select: text }
+.nfoot { display: flex; align-items: center; gap: 8px }
+.nfoot small { color: var(--k-var); font-size: 11px }
+.nfoot .pill { height: 30px; font-size: 13px; padding: 0 12px }
+.hcard .iconrow { display: flex; gap: 4px; justify-content: flex-end; margin: -4px -4px -4px 0 }
+.hcard .iconrow .pbtn { width: 36px; height: 36px }
+
+/* a short message at the bottom of the page, with Undo when there's something to undo */
+.toast { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 12px; max-width: min(560px, calc(100% - 32px)); background: var(--k-on); color: var(--k-bg); border-radius: 999px; padding: 6px 6px 6px 18px; min-height: 44px; font-size: 13.5px; box-shadow: 0 8px 24px var(--k-shadow); animation: pin .14s ease-out }
+.toast span { padding-right: 12px }
+.toast .pill { height: 32px; background: color-mix(in srgb, var(--k-bg) 18%, transparent); color: var(--k-bg); border-color: transparent; flex: none }
+
+/* the marks panel's rows */
+.mr .cbar { width: 4px; border-radius: 2px; align-self: stretch; background: var(--c); flex: none }
+.mr .mnote { font-size: 13px; line-height: 1.4; color: var(--k-on); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
+.mr q.hq { color: var(--k-on) }
+.mr .del + .del { margin-left: -6px }
+.mr.bmedit { display: flex; gap: 10px; padding: 10px; background: var(--k-sch); align-items: flex-start }
+.mr.bmedit:hover { background: var(--k-sch) }
+.bmf { flex: 1; min-width: 0; display: grid; gap: 6px }
+.bmf input { min-height: 0; height: 32px; font-weight: 600; border-bottom: 1px solid var(--k-outv) }
+.bmf textarea { min-height: 48px }
+.fpanel .syncl { font-size: 11.5px; color: var(--k-dim); padding: 0 4px; flex: none; margin-top: -6px }
+.fpanel .pfoot .pill.tone:disabled { opacity: .45 }

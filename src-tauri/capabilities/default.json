@@ -17,6 +17,7 @@
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-theme",
     "dialog:allow-open",
+    "dialog:allow-save",
     "decorum:allow-show-snap-overlay"
   ]
 }

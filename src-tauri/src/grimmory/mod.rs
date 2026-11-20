@@ -10,6 +10,7 @@
 pub mod catalog;
 pub mod covers;
 pub mod downloads;
+pub mod marks_sync;
 pub mod matching;
 pub mod place;
 pub mod sync;
@@ -424,6 +425,7 @@ fn back_online(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         sync::push_all(&app).await;
+        marks_sync::push_all(&app).await;
         downloads::resume_waiting(&app);
         let _ = catalog::sync(&app, false).await;
     });
@@ -450,6 +452,7 @@ pub fn start(app: &AppHandle) {
         }
         downloads::restore(&app);
         sync::push_all(&app).await;
+        marks_sync::push_all(&app).await;
         let _ = catalog::sync(&app, false).await;
         // keep up while open: the reading places that moved elsewhere, every 10 minutes
         loop {
@@ -552,6 +555,7 @@ pub async fn grimmory_check(app: AppHandle) -> bool {
     if ok {
         downloads::resume_waiting(&app);
         sync::push_all(&app).await;
+        marks_sync::push_all(&app).await;
     }
     ok
 }

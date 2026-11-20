@@ -10,7 +10,10 @@ import { fmtWhen } from "../lib/format";
 import { CaptionButtons } from "../components/TitleBar";
 import { AaPanel } from "./AaPanel";
 import { ContentsPanel, MarksPanel, Panel, SearchPanel, type TocItem } from "./panels";
-import { marks as marksApi, type Bookmark } from "./marks";
+import { COLOURS, exportMarkdown, hexOf, hls, marks as marksApi, marksApi as marksSync, type Bookmark, type Colour, type Highlight, type MarkPlace, type Style } from "./marks";
+import { HighlightCard, SelectionCard, copyText, type Anchor } from "./cards";
+import type { Mark } from "./marklist";
+import { Overlayer } from "foliate-js/overlayer.js";
 import { cleanNote, isNoteLink, noteElement } from "./footnotes";
 import { BUILT_IN, MARGINS, bookCss, loadPrefs, loadUiFonts, pageColours, saveBookPrefs, saveDefaultPrefs, type Prefs } from "./prefs";
 import "./reader.css";
@@ -35,6 +38,53 @@ type RightPanel = "marks" | "aa" | null;
 /** A place to go back to after a jump. */
 type Back = { cfi: string; fraction: number; label: string };
 type Note = { x: number; y: number; above: boolean; frag: DocumentFragment; href: string };
+/** Words selected on the page: the selection card shows. */
+type Sel = { index: number; range: Range; doc: Document; text: string; cfi: string; anchor: Anchor };
+/** A highlight clicked (or just made with Note): the highlight card shows. */
+type Card = { id: number; anchor: Anchor; editing: boolean };
+type Toast = { text: string; undo?: () => void };
+type Look = { color: Colour; style: Style };
+
+/** A page's first words for a bookmark: about 160 characters, ending at a word. */
+function firstWords(text: string): string | null {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (t.length <= 160) return t || null;
+  const cut = t.slice(0, 160);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > 100 ? cut.slice(0, sp) : cut).replace(/[\s,;:]+$/, "")}…`;
+}
+
+/** How far through the book a range is: its section's share, and the characters before it there. */
+function fractionIn(view: FoliateView, index: number, doc: Document, range: Range): number | null {
+  try {
+    const sf: number[] = view.getSectionFractions?.() ?? [];
+    const a = sf[index] ?? 0;
+    const b = sf[index + 1] ?? 1;
+    const body = doc.body ?? doc.documentElement;
+    const pre = doc.createRange();
+    pre.setStart(body, 0);
+    pre.setEnd(range.startContainer, range.startOffset);
+    const before = pre.toString().length;
+    const total = (body.textContent ?? "").length || 1;
+    return Math.min(1, Math.max(0, a + ((b - a) * before) / total));
+  } catch {
+    return null;
+  }
+}
+
+/** A range's box in the reader's coordinates (the page sits in an iframe). */
+function anchorOf(range: Range, doc: Document, rd: HTMLElement): Anchor {
+  const frame = doc.defaultView?.frameElement as HTMLElement | null;
+  const fr = frame?.getBoundingClientRect() ?? { left: 0, top: 0 };
+  const box = rd.getBoundingClientRect();
+  const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+  const r = range.getBoundingClientRect();
+  // a selection over two columns: point at its first line
+  const first = rects[0];
+  const twoCols = first && rects.some((x) => x.left > first.right + 40 && x.top < first.top);
+  const b = twoCols ? first : r;
+  return { left: fr.left + b.left - box.left, right: fr.left + b.right - box.left, top: fr.top + b.top - box.top, bottom: fr.top + (twoCols ? first.bottom : r.bottom) - box.top };
+}
 
 const LEFT_W = 340;
 const RIGHT_W = 400;
@@ -110,7 +160,16 @@ function themeFoliateScrollbars() {
   };
 }
 
-export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
+const syncText = (s: string) =>
+  s === "synced"
+    ? "Highlights and bookmarks sync with Grimmory."
+    : s === "waiting"
+      ? "Changes wait to go to Grimmory."
+      : s === "format"
+        ? "This format's highlights and bookmarks stay on this PC."
+        : "Highlights and bookmarks stay on this PC.";
+
+export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => void; startAt?: string | null }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const rdRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
@@ -162,6 +221,27 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   const [area, setArea] = useState({ w: 0, h: 0 });
   const [winW, setWinW] = useState(window.innerWidth);
 
+  // highlights, the selection card, the highlight card
+  const [hl, setHl] = useState<Highlight[]>([]);
+  const hlRef = useRef(hl);
+  hlRef.current = hl;
+  const [sel, setSel] = useState<Sel | null>(null);
+  const selRef = useRef(sel);
+  selRef.current = sel;
+  const [card, setCard] = useState<Card | null>(null);
+  const cardRef = useRef(card);
+  cardRef.current = card;
+  const [look, setLook] = useState<Look>({ color: "yellow", style: "highlight" });
+  const lookRef = useRef(look);
+  lookRef.current = look;
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimer = useRef(0);
+  const [lost, setLost] = useState<{ highlights: number; bookmarks: number } | null>(null);
+  const [syncLine, setSyncLine] = useState<string | null>(null);
+  const annotClick = useRef(0);
+  const totalRef = useRef(0);
+  const [room, setRoom] = useState({ w: 0, h: 0 });
+
   // ---------- layout of the frame ----------
   const roomFor = (n: number) => winW - n >= MIN_PAGE;
   const dockL = !!left && pinL && roomFor(LEFT_W + (right && pinR ? RIGHT_W : 0));
@@ -174,7 +254,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   const barTimer = useRef(0);
   const overBars = useRef(false);
   const keep = useRef(false);
-  keep.current = floating || !!offer || !!note || state !== "ready";
+  keep.current = floating || !!offer || !!note || !!sel || !!card || !!lost || state !== "ready";
   const poke = useCallback(() => {
     setBars(true);
     clearTimeout(barTimer.current);
@@ -191,7 +271,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   useEffect(() => {
     if (keep.current) setBars(true);
     else poke();
-  }, [floating, offer, note, state, poke]);
+  }, [floating, offer, note, state, poke, lost]);
 
   // ---------- where you are ----------
   const pageOfFraction = useCallback(
@@ -272,7 +352,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       setHere(new Set());
       return;
     }
-    const excerpt = (r.range?.toString() ?? "").replace(/\s+/g, " ").trim().slice(0, 160) || null;
+    const excerpt = firstWords(r.range?.toString() ?? "");
     try {
       const b = await marksApi.add(
         book.id,
@@ -296,6 +376,248 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
     const list = marksRef.current.filter((x) => x.id !== b.id);
     setMarks(list);
     setHere(hereOf(last.current, list));
+  };
+
+  const saveBookmark = async (b: Bookmark, title: string | null, note: string | null) => {
+    await marksApi.update(b.id, title, note).catch(() => {});
+    setMarks(marksRef.current.map((x) => (x.id === b.id ? { ...x, title, note, updatedAt: Date.now() } : x)));
+  };
+
+  // ---------- highlights ----------
+  const showToast = useCallback((t: Toast) => {
+    setToast(t);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), t.undo ? 6000 : 2600);
+  }, []);
+
+  const draw = (h: Highlight) => viewRef.current?.addAnnotation({ value: h.cfi }).catch?.(() => {});
+  const undraw = (cfi: string) => viewRef.current?.deleteAnnotation({ value: cfi }).catch?.(() => {});
+
+  const clearSelection = () => {
+    const s = selRef.current;
+    try {
+      s?.doc.getSelection()?.removeAllRanges();
+    } catch {
+      /* the page went */
+    }
+    setSel(null);
+  };
+
+  /** Highlights the selected words (one click on a dot, H, or Note). */
+  const makeHighlight = async (color: Colour, style: Style, withNote = false) => {
+    const s = selRef.current;
+    const v = viewRef.current;
+    if (!s || !v) return;
+    const progress = v.getProgressOf?.(s.index, s.range) ?? {};
+    // the page as the reader counts it: the page you're on (the right one of two when the words are there)
+    const frac = last.current?.fraction ?? fractionIn(v, s.index, s.doc, s.range);
+    const printedPage = progress.pageItem?.label ? String(progress.pageItem.label) : null;
+    const shown = Number(pageLabelRef.current.replace(/^p\. /, ""));
+    const host = hostRef.current?.getBoundingClientRect();
+    const rightPage = cols.current === 2 && host && s.anchor.left > host.left + host.width / 2;
+    const pageLabel = printedPage ?? (shown ? String(shown + (rightPage ? 1 : 0)) : null);
+    try {
+      const h = await hls.add({
+        bookId: book.id,
+        cfi: s.cfi,
+        text: s.text,
+        chapter: progress.tocItem?.label?.trim() || last.current?.tocItem?.label?.trim() || null,
+        fraction: frac,
+        pageLabel,
+        color,
+        style,
+      });
+      clearSelection();
+      setHl((list) => [...list.filter((x) => x.id !== h.id), h]);
+      hlRef.current = [...hlRef.current.filter((x) => x.id !== h.id), h];
+      draw(h);
+      const lk = { color, style };
+      setLook(lk);
+      api.setSetting("reader.hlLook", JSON.stringify(lk)).catch(() => {});
+      if (withNote) setCard({ id: h.id, anchor: s.anchor, editing: true });
+    } catch (e) {
+      console.error(e);
+      showToast({ text: "That highlight couldn't be saved." });
+    }
+  };
+
+  const changeHighlight = async (h: Highlight, color: Colour, style: Style, note: string | null) => {
+    const next = { ...h, color, style, note, updatedAt: Date.now() };
+    setHl((list) => list.map((x) => (x.id === h.id ? next : x)));
+    hlRef.current = hlRef.current.map((x) => (x.id === h.id ? next : x));
+    draw(next);
+    if (color !== h.color || style !== h.style) {
+      const lk = { color, style };
+      setLook(lk);
+      api.setSetting("reader.hlLook", JSON.stringify(lk)).catch(() => {});
+    }
+    await hls.update(h.id, color, style, note).catch(() => showToast({ text: "That change couldn't be saved." }));
+  };
+
+  const deleteHighlight = async (h: Highlight) => {
+    setCard(null);
+    setHl((list) => list.filter((x) => x.id !== h.id));
+    hlRef.current = hlRef.current.filter((x) => x.id !== h.id);
+    undraw(h.cfi);
+    await hls.remove(h.id).catch(() => {});
+    showToast({
+      text: "Highlight deleted",
+      undo: async () => {
+        const back = await hls.restore(h).catch(() => null);
+        if (!back) return;
+        setHl((list) => [...list.filter((x) => x.id !== back.id), back]);
+        hlRef.current = [...hlRef.current.filter((x) => x.id !== back.id), back];
+        draw(back);
+      },
+    });
+  };
+
+  const copySel = async () => {
+    const s = selRef.current;
+    if (!s) return;
+    await copyText(s.text);
+    clearSelection();
+    showToast({ text: "Copied" });
+  };
+
+  const lookUp = () => {
+    const s = selRef.current;
+    if (!s) return;
+    showToast({ text: `The built-in dictionary comes in the next version: “${s.text.slice(0, 40)}” isn't looked up yet.` });
+  };
+
+  /** Reloads marks after Grimmory changed them, and redraws what moved. */
+  const reloadMarks = useCallback(async () => {
+    const [h, b] = await Promise.all([hls.list(book.id), marksApi.list(book.id)]).catch(() => [null, null]);
+    if (h) {
+      const before = new Map(hlRef.current.map((x) => [x.cfi, x]));
+      const after = new Map(h.map((x) => [x.cfi, x]));
+      for (const [cfi] of before) if (!after.has(cfi)) undraw(cfi);
+      hlRef.current = h;
+      setHl(h);
+      for (const x of h) {
+        const o = before.get(x.cfi);
+        if (!o || o.color !== x.color || o.style !== x.style) draw(x);
+      }
+      const c = cardRef.current;
+      if (c && !h.some((x) => x.id === c.id)) setCard(null);
+    }
+    if (b) {
+      marksRef.current = b;
+      setMarks(b);
+    }
+    marksSync.syncState(book.id).then((st) => setSyncLine(syncText(st))).catch(() => {});
+    placeMissing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book.id]);
+
+  /** Marks from Grimmory have no page here yet: they get one (how far through, page, chapter, first words). */
+  const placing = useRef(false);
+  const placeMissing = async () => {
+    const v = viewRef.current;
+    if (!v || placing.current) return;
+    const todo: { kind: "highlight" | "bookmark"; id: number; cfi: string }[] = [
+      ...hlRef.current.filter((h) => h.fraction == null).map((h) => ({ kind: "highlight" as const, id: h.id, cfi: h.cfi })),
+      ...marksRef.current.filter((b) => b.fraction == null).map((b) => ({ kind: "bookmark" as const, id: b.id, cfi: b.cfi })),
+    ];
+    if (!todo.length) return;
+    placing.current = true;
+    const docs = new Map<number, Document>();
+    const places: MarkPlace[] = [];
+    for (const t of todo) {
+      try {
+        const { index, anchor } = v.resolveNavigation(t.cfi) ?? {};
+        if (index == null || !anchor) continue;
+        let doc = docs.get(index);
+        if (!doc) {
+          doc = (await v.book.sections[index].createDocument()) as Document;
+          docs.set(index, doc);
+        }
+        const found = anchor(doc);
+        const range: Range = found instanceof Range ? found : (() => {
+          const r = doc.createRange();
+          r.selectNodeContents(found ?? doc.body);
+          r.collapse(true);
+          return r;
+        })();
+        const frac = fractionIn(v, index, doc, range);
+        const p = v.getProgressOf?.(index, range) ?? {};
+        // a printed page is exact; a page of this window is filled in once its page is on screen
+        const pageLabel = p.pageItem?.label ? String(p.pageItem.label) : null;
+        let excerpt: string | null = null;
+        if (t.kind === "bookmark") {
+          const r2 = doc.createRange();
+          r2.setStart(range.startContainer, range.startOffset);
+          r2.setEnd(doc.body, doc.body.childNodes.length);
+          excerpt = firstWords(r2.toString());
+        }
+        places.push({ kind: t.kind, id: t.id, fraction: frac, pageLabel, chapter: p.tocItem?.label?.trim() || null, excerpt });
+      } catch {
+        /* a place that doesn't resolve in this copy: it stays unplaced */
+      }
+    }
+    placing.current = false;
+    if (!places.length) return;
+    await marksSync.place(places).catch(() => {});
+    const [h, b] = await Promise.all([hls.list(book.id), marksApi.list(book.id)]).catch(() => [null, null]);
+    if (h) {
+      hlRef.current = h;
+      setHl(h);
+    }
+    if (b) {
+      marksRef.current = b;
+      setMarks(b);
+    }
+  };
+
+  /** Marks on the page now that have no page of this window yet (from Grimmory) take this page. */
+  const fillPages = (d: Relocate, label: string) => {
+    const CFI = cfiRef.current;
+    const n = label.replace(/^p\. /, "");
+    if (!CFI || !n || !d.cfi) return;
+    let start: string;
+    let end: string;
+    try {
+      start = CFI.collapse(d.cfi);
+      end = CFI.collapse(d.cfi, true);
+    } catch {
+      return;
+    }
+    const onPage = (c: string) => {
+      try {
+        return CFI.compare(c, start) >= 0 && CFI.compare(c, end) <= 0;
+      } catch {
+        return false;
+      }
+    };
+    const hs = hlRef.current.filter((h) => !h.pageLabel && onPage(h.cfi));
+    const bs = marksRef.current.filter((b) => !b.pageLabel && onPage(b.cfi));
+    if (!hs.length && !bs.length) return;
+    const places: MarkPlace[] = [
+      ...hs.map((h) => ({ kind: "highlight" as const, id: h.id, fraction: null, pageLabel: n, chapter: null })),
+      ...bs.map((b) => ({ kind: "bookmark" as const, id: b.id, fraction: null, pageLabel: n, chapter: null })),
+    ];
+    marksSync.place(places).catch(() => {});
+    const hid = new Set(hs.map((h) => h.id));
+    const bid = new Set(bs.map((b) => b.id));
+    hlRef.current = hlRef.current.map((h) => (hid.has(h.id) ? { ...h, pageLabel: n } : h));
+    marksRef.current = marksRef.current.map((b) => (bid.has(b.id) ? { ...b, pageLabel: n } : b));
+    setHl(hlRef.current);
+    setMarks(marksRef.current);
+  };
+
+  const goToMark = (m: Mark) => {
+    jumpTo(m.cfi);
+    if (!dockR) setRight(null);
+  };
+  const removeAnyMark = (m: Mark) => (m.kind === "hl" ? deleteHighlight(m.h) : removeMark(m.b));
+  const exportMarks = async () => {
+    try {
+      const path = await exportMarkdown(book.id);
+      if (path) showToast({ text: `Saved ${path.split(/[\\/]/).pop()}` });
+    } catch (e) {
+      showToast({ text: e instanceof Error ? e.message : String(e) });
+    }
   };
 
   // ---------- reading settings ----------
@@ -332,10 +654,10 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   };
 
   // keys need the latest of these without re-binding listeners in every book page
-  const act = useRef({ toggleMark, goBack, poke, hideBars, setPrefs });
-  act.current = { toggleMark, goBack, poke, hideBars, setPrefs };
-  const ui = useRef({ left, right, note });
-  ui.current = { left, right, note };
+  const act = useRef({ toggleMark, goBack, poke, hideBars, setPrefs, makeHighlight, copySel, lookUp, clearSelection, deleteHighlight, reloadMarks, fillPages });
+  act.current = { toggleMark, goBack, poke, hideBars, setPrefs, makeHighlight, copySel, lookUp, clearSelection, deleteHighlight, reloadMarks, fillPages };
+  const ui = useRef({ left, right, note, card });
+  ui.current = { left, right, note, card };
 
   useEffect(() => {
     let cancelled = false;
@@ -351,6 +673,8 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       lastTurn.current = Date.now();
       acted.current = true;
       setNote(null);
+      setSel(null);
+      setCard(null);
       if (how === "prev") v.prev(distance);
       else if (how === "next") v.next(distance);
       else if (how === "left") v.goLeft();
@@ -364,6 +688,26 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       // a focused button takes Space and Enter, the slider its arrows
       if (!e.ctrlKey && !e.altKey && t?.closest?.("button") && (e.key === " " || e.key === "Enter")) return;
       if (!e.altKey && t?.closest?.("[role=slider]") && e.key.startsWith("Arrow")) return;
+      // words selected: H highlights, 1 to 5 in that colour, N with a note, C copies, L looks up
+      if (selRef.current && !e.ctrlKey && !e.altKey && !e.metaKey && !typing) {
+        const lk = lookRef.current;
+        const n = Number(e.key);
+        const a = act.current;
+        if (k === "h") return (e.preventDefault(), void a.makeHighlight(lk.color, lk.style));
+        if (k === "n") return (e.preventDefault(), void a.makeHighlight(lk.color, lk.style, true));
+        if (k === "c") return (e.preventDefault(), void a.copySel());
+        if (k === "l") return (e.preventDefault(), a.lookUp());
+        if (n >= 1 && n <= 5) return (e.preventDefault(), void a.makeHighlight(COLOURS[n - 1].id, lk.style));
+        if (e.key === "Escape") return (e.preventDefault(), a.clearSelection());
+      }
+      if (ui.current.card && !typing && e.key === "Delete") {
+        const h = hlRef.current.find((x) => x.id === ui.current.card?.id);
+        if (h) {
+          e.preventDefault();
+          act.current.deleteHighlight(h);
+          return;
+        }
+      }
       if (e.ctrlKey && !e.altKey && !e.metaKey) {
         if (k === "b" && !typing) {
           e.preventDefault();
@@ -394,6 +738,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
         e.preventDefault();
         // Esc closes the top-most thing: a note, a floating panel, then the book
         const u = ui.current;
+        if (u.card) return setCard(null);
         if (u.note) return setNote(null);
         if (u.right) return setRight(null);
         if (u.left) return setLeft(null);
@@ -450,8 +795,40 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       const pageRect = host.getBoundingClientRect();
       const x = (frame?.getBoundingClientRect().left ?? 0) + e.clientX;
       const f = (x - pageRect.left) / pageRect.width;
-      if (f < 0.2) turn("left");
-      else if (f > 0.8) turn("right");
+      // a click on a highlight opens its card (foliate-js says so in the same click); a click off an
+      // open card closes it; only then does the outer fifth turn the page
+      const hadCard = !!cardRef.current;
+      setTimeout(() => {
+        if (Date.now() - annotClick.current < 400) return;
+        if (hadCard) return setCard(null);
+        if (f < 0.2) turn("left");
+        else if (f > 0.8) turn("right");
+      }, 0);
+    };
+
+    // words selected with the mouse: the selection card
+    const onPointerUp = (doc: Document, index: number) => (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      setTimeout(() => {
+        const s = doc.getSelection();
+        const v = viewRef.current;
+        if (!s || s.isCollapsed || !s.rangeCount || !v) return;
+        const range = s.getRangeAt(0).cloneRange();
+        const text = range.toString().replace(/\s+/g, " ").trim();
+        if (!text) return;
+        let cfi: string;
+        try {
+          cfi = v.getCFI(index, range);
+        } catch {
+          return;
+        }
+        setCard(null);
+        setSel({ index, range, doc, text, cfi, anchor: anchorOf(range, doc, rdRef.current!) });
+      }, 0);
+    };
+    const onSelChange = (doc: Document) => () => {
+      const s = doc.getSelection();
+      if ((!s || s.isCollapsed) && selRef.current?.doc === doc) setSel(null);
     };
 
     // a real mouse move (not a page laid out under a still mouse) shows the bars
@@ -492,6 +869,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
         const total = Math.max(1, Math.round(totalBytes / per));
         const n = Math.min(total, Math.floor((d.fraction ?? 0) * total) + 1);
         setTotalPages(total);
+        totalRef.current = total;
         setPageText(`${n} / ${total}`);
         label = `p. ${n}`;
       } else if (d.location) {
@@ -501,6 +879,8 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       }
       setPageLabel(label);
       pageLabelRef.current = label;
+      // pages of this window are only right once a chapter taught how much a page holds
+      if (d.pageItem?.label || perPage.current > 0) act.current.fillPages(d, label);
       if (isScroll && r.viewSize && r.size) {
         const left = Math.max(0, Math.ceil((r.viewSize - r.end) / r.size));
         setLeftText(left === 0 ? "End of chapter" : `${left} ${left === 1 ? "screen" : "screens"} left in chapter`);
@@ -548,12 +928,53 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       jumpFrom();
     };
 
-    const onLoad = (e: CustomEvent<{ doc: Document }>) => {
-      const doc = e.detail.doc;
+    const onLoad = (e: CustomEvent<{ doc: Document; index: number }>) => {
+      const { doc, index } = e.detail;
       doc.addEventListener("keydown", onKey);
       doc.addEventListener("wheel", onWheel, { passive: false });
       doc.addEventListener("click", onDocClick(doc));
       doc.addEventListener("mousemove", onMove);
+      doc.addEventListener("pointerup", onPointerUp(doc, index));
+      doc.addEventListener("selectionchange", onSelChange(doc));
+    };
+
+    // highlights: drawn by foliate-js's overlayer in each section as it's laid out
+    const sectionOf = new Map<string, number>();
+    const indexOf = (cfi: string) => {
+      let i = sectionOf.get(cfi);
+      if (i == null) {
+        try {
+          i = viewRef.current?.resolveNavigation(cfi)?.index ?? -1;
+        } catch {
+          i = -1;
+        }
+        sectionOf.set(cfi, i!);
+      }
+      return i!;
+    };
+    const onCreateOverlay = (e: CustomEvent<{ index: number }>) => {
+      const v = viewRef.current;
+      for (const h of hlRef.current) if (indexOf(h.cfi) === e.detail.index) v?.addAnnotation({ value: h.cfi }).catch?.(() => {});
+    };
+    const onDrawAnnotation = (e: CustomEvent<{ draw: (f: unknown, o: unknown) => void; annotation: { value: string } }>) => {
+      const { draw, annotation } = e.detail;
+      const h = hlRef.current.find((x) => x.cfi === annotation.value);
+      if (!h) return;
+      const color = hexOf(h.color);
+      if (h.style === "underline") draw(Overlayer.underline, { color, width: 2 });
+      else if (h.style === "strikethrough") draw(Overlayer.strikethrough, { color, width: 2 });
+      else if (h.style === "squiggly") draw(Overlayer.squiggly, { color, width: 2 });
+      else draw(Overlayer.highlight, { color });
+    };
+    const onShowAnnotation = (e: CustomEvent<{ value: string; range: Range }>) => {
+      const { value, range } = e.detail;
+      const h = hlRef.current.find((x) => x.cfi === value);
+      const doc = range?.startContainer?.ownerDocument;
+      if (!h || !doc || !rdRef.current) return;
+      annotClick.current = Date.now();
+      setSel(null);
+      setNote(null);
+      setCard({ id: h.id, anchor: anchorOf(range, doc, rdRef.current), editing: false });
     };
 
     const themeObserver = new MutationObserver(() => {
@@ -569,13 +990,23 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       try {
         loadUiFonts();
         themeFoliateScrollbars();
-        const [{ prefs: p, own: o, def: d }, list, CFI] = await Promise.all([
+        const [{ prefs: p, own: o, def: d }, list, CFI, , hlist, lk] = await Promise.all([
           loadPrefs(book.id),
           marksApi.list(book.id).catch(() => [] as Bookmark[]),
           import("foliate-js/epubcfi.js"),
           import("foliate-js/view.js"),
+          hls.list(book.id).catch(() => [] as Highlight[]),
+          api.getSetting("reader.hlLook").catch(() => null),
         ]);
         cfiRef.current = CFI;
+        hlRef.current = hlist;
+        setHl(hlist);
+        try {
+          const l = lk ? (JSON.parse(lk) as Look) : null;
+          if (l?.color && l?.style) setLook(l);
+        } catch {
+          /* the default look */
+        }
         prefsRef.current = p;
         setPrefsState(p);
         setOwn(o);
@@ -605,6 +1036,9 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
         view.addEventListener("load", onLoad);
         view.addEventListener("link", onLink);
         view.addEventListener("external-link", (e: Event) => e.preventDefault());
+        view.addEventListener("create-overlay", onCreateOverlay);
+        view.addEventListener("draw-annotation", onDrawAnnotation);
+        view.addEventListener("show-annotation", onShowAnnotation);
         // a Grimmory book (or a Local copy of one) opens at Grimmory's place when that's the latest read
         const place = await grimmory.openPlace(book.id).catch(() => null);
         if (cancelled) return;
@@ -619,6 +1053,17 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
         setState("ready");
         api.markOpened(book.id).catch(() => {});
         themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+        // Grimmory's highlights and bookmarks for this book; marks without a page here get one
+        act.current.reloadMarks();
+        marksSync
+          .sync(book.id)
+          .then(() => marksSync.lost(book.id))
+          .then((l) => !cancelled && setLost(l))
+          .catch(() => {});
+        if (startAt) {
+          jumpFrom();
+          await view.goTo(startAt);
+        }
       } catch (err) {
         console.error(err);
         if (!cancelled) {
@@ -629,8 +1074,16 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
     })();
 
     const onResize = () => setWinW(window.innerWidth);
-    const ro = new ResizeObserver(() => setArea({ w: host.clientWidth, h: host.clientHeight }));
+    const ro = new ResizeObserver(() => {
+      setArea({ w: host.clientWidth, h: host.clientHeight });
+      const rd = rdRef.current;
+      if (rd) setRoom({ w: rd.clientWidth, h: rd.clientHeight });
+      // the words moved: a card pointing at them would point at nothing
+      setSel(null);
+      setCard(null);
+    });
     ro.observe(host);
+    if (rdRef.current) ro.observe(rdRef.current);
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
     window.addEventListener("mousemove", onMove);
@@ -638,6 +1091,13 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
     // Grimmory's place moved while the book is open (read on the Fire): ask
     const unOffer = listen<number>("grimmory-offer", (e) => {
       if (e.payload === book.id) grimmory.offer(book.id).then((o) => o && setOffer(o)).catch(() => {});
+    });
+    // highlights or bookmarks changed on Grimmory (or here, by a sync)
+    const unMarks = listen<number>("marks-changed", (e) => {
+      if (e.payload === book.id) act.current.reloadMarks();
+    });
+    const unLost = listen<number>("marks-lost", (e) => {
+      if (e.payload === book.id) marksSync.lost(book.id).then(setLost).catch(() => {});
     });
 
     // Reading time for the reading card and the Journal: counted while the window is in front
@@ -655,6 +1115,9 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       // the place goes up as the book closes
       save().finally(() => grimmory.closed(book.id).catch(() => {}));
       unOffer.then((f) => f());
+      unMarks.then((f) => f());
+      unLost.then((f) => f());
+      clearTimeout(toastTimer.current);
       themeObserver.disconnect();
       ro.disconnect();
       window.removeEventListener("keydown", onKey);
@@ -808,7 +1271,18 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   const pillW = Math.min(760, Math.max(360, area.w - 460));
 
   return (
-    <div ref={rdRef} className={`rd ${tone} ${bars ? "" : "bars-off"}`} style={pageStyle} data-page-dark={colours.dark ? "1" : "0"}>
+    <div
+      ref={rdRef}
+      className={`rd ${tone} ${bars ? "" : "bars-off"}`}
+      style={pageStyle}
+      data-page-dark={colours.dark ? "1" : "0"}
+      onMouseDown={(e) => {
+        // a click anywhere off the cards closes them (clicks on the page itself are handled in the book)
+        if ((e.target as Element).closest?.(".pop")) return;
+        if (cardRef.current && !cardRef.current.editing) setCard(null);
+        if (selRef.current) clearSelection();
+      }}
+    >
       <div className="pgarea" style={{ left: offL, right: offR }}>
         <div className="strip">{chapter}</div>
         <div className="page" ref={hostRef}>
@@ -888,8 +1362,8 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
         <button
           type="button"
           className={`ib ${right === "marks" ? "on" : ""}`}
-          aria-label="Bookmarks in this book"
-          title="Bookmarks in this book"
+          aria-label="Marks in this book"
+          title="Highlights, notes and bookmarks in this book"
           onClick={() => setRight(right === "marks" ? null : "marks")}
         >
           <i className="ms">bookmarks</i>
@@ -994,9 +1468,9 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
           ) : (
             <Panel
               side="right"
-              label="Bookmarks in this book"
+              label="Marks in this book"
               title="Marks in this book"
-              sub={`${marks.length} ${marks.length === 1 ? "bookmark" : "bookmarks"}`}
+              sub={`${hl.length} ${hl.length === 1 ? "highlight" : "highlights"} · ${marks.length} ${marks.length === 1 ? "bookmark" : "bookmarks"}`}
               pinned={pinR}
               docked={dockR}
               width={RIGHT_W}
@@ -1004,15 +1478,17 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
               onClose={() => setRight(null)}
             >
               <MarksPanel
-                marks={marks}
+                highlights={hl}
+                bookmarks={marks}
                 here={here}
                 hereLabel={pageLabel || `${Math.round(fraction * 100)}%`}
+                hereCfi={last.current?.cfi ? cfiRef.current?.collapse(last.current.cfi) ?? null : null}
                 fraction={fraction}
-                onGo={(b) => {
-                  jumpTo(b.cfi);
-                  if (!dockR) setRight(null);
-                }}
-                onRemove={removeMark}
+                syncLine={syncLine}
+                onGo={goToMark}
+                onRemove={removeAnyMark}
+                onSaveBookmark={saveBookmark}
+                onExport={exportMarks}
               />
             </Panel>
           )}
@@ -1114,6 +1590,96 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
               <i className="ms">close</i>
             </button>
           </div>
+        </div>
+      )}
+
+      {sel && (
+        <SelectionCard
+          anchor={sel.anchor}
+          room={room}
+          look={look}
+          lookUp={sel.text.length <= 60 ? sel.text : null}
+          onColour={(c) => makeHighlight(c, look.style)}
+          onNote={() => makeHighlight(look.color, look.style, true)}
+          onCopy={copySel}
+          onLookUp={lookUp}
+        />
+      )}
+
+      {card &&
+        (() => {
+          const h = hl.find((x) => x.id === card.id);
+          if (!h) return null;
+          return (
+            <HighlightCard
+              key={h.id}
+              h={h}
+              anchor={card.anchor}
+              room={room}
+              editing={card.editing}
+              onEdit={(on) => setCard((c) => (c ? { ...c, editing: on } : c))}
+              onLook={(color, style) => changeHighlight(h, color, style, h.note)}
+              onNote={(n) => changeHighlight(h, h.color, h.style, n)}
+              onCopy={async () => {
+                await copyText(h.text);
+                showToast({ text: "Copied" });
+              }}
+              onDelete={() => deleteHighlight(h)}
+            />
+          );
+        })()}
+
+      {toast && (
+        <div className="toast" role="status">
+          <span>{toast.text}</span>
+          {toast.undo && (
+            <button
+              type="button"
+              className="pill tone"
+              onClick={() => {
+                const u = toast.undo;
+                setToast(null);
+                u?.();
+              }}
+            >
+              Undo
+            </button>
+          )}
+        </div>
+      )}
+
+      {lost && (
+        <div className="offer wrap" role="alertdialog" aria-label="Grimmory lost some marks">
+          <i className="ms">cloud_off</i>
+          <span>
+            Grimmory no longer has{" "}
+            {[lost.highlights ? `${lost.highlights} of this book's highlights` : "", lost.bookmarks ? `${lost.bookmarks} of its bookmarks` : ""]
+              .filter(Boolean)
+              .join(" and ")}
+            . Remove them here too, or put them back on Grimmory?
+          </span>
+          <span className="acts2">
+          <button
+            type="button"
+            className="pill"
+            onClick={() => {
+              setLost(null);
+              marksSync.lostAnswer(book.id, false).catch(() => {});
+            }}
+          >
+            Remove here
+          </button>
+          <button
+            type="button"
+            className="pill fill"
+            onClick={() => {
+              setLost(null);
+              marksSync.lostAnswer(book.id, true).catch(() => {});
+            }}
+          >
+            Put back
+          </button>
+          </span>
         </div>
       )}
 
