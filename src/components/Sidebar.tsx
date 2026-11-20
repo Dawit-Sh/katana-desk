@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { useUpdates } from "../lib/updates";
 import { api, type ReadingDays } from "../lib/api";
 import { useStore, type Page } from "../lib/store";
 
-type Item = { page: Page; icon: string; label: string; count?: number };
+type Item = { page: Page; icon: string; label: string; count?: number; badge?: string };
 
 const dayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -90,6 +91,7 @@ export function Sidebar({ drawer, onPick }: { drawer?: boolean; onPick?: () => v
   const goPlace = useStore((s) => s.goPlace);
   const { sources, pages } = useNavItems();
   const signedIn = useStore((s) => !!s.g?.signedIn);
+  const upd = useUpdates((u) => u.phase === "found");
   const pick = (p: Page) => {
     if (p === "local" && page === "local") goPlace({ folderId: null, sub: [] });
     else go(p);
@@ -100,6 +102,7 @@ export function Sidebar({ drawer, onPick }: { drawer?: boolean; onPick?: () => v
       <i className="ms">{it.icon}</i>
       <span>{it.label}</span>
       {!!it.count && <span className="cnt">{it.count.toLocaleString("en-US")}</span>}
+      {!!it.badge && <span className="badge">{it.badge}</span>}
     </button>
   );
   return (
@@ -115,7 +118,7 @@ export function Sidebar({ drawer, onPick }: { drawer?: boolean; onPick?: () => v
       <div className="sl">Your reading</div>
       {pages.map(row)}
       <div className="grow" />
-      {row({ page: "settings", icon: "settings", label: "Settings" })}
+      {row({ page: "settings", icon: "settings", label: "Settings", badge: upd ? "Update" : undefined })}
     </nav>
   );
 }

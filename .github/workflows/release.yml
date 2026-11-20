@@ -1,0 +1,94 @@
+# Builds the installers on GitHub's runners and attaches them to a DRAFT release:
+# Windows (NSIS) and Linux (AppImage, .deb, .rpm), each signed for the in-app updater,
+# plus latest.json for the updater. Publishing the draft is done by hand.
+# Runs on a version tag (v0.1.0) or by hand (Actions › Release › Run workflow).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    name: Draft release
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.draft.outputs.id }}
+      version: ${{ steps.draft.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: draft
+        name: Make (or reuse) the draft release for this version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/draft-release.mjs
+
+  build:
+    name: ${{ matrix.name }}
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            args: --bundles nsis
+          - name: Linux
+            os: ubuntu-22.04
+            args: --bundles appimage,deb,rpm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux packages (WebKitGTK and friends)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf build-essential
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: release
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.draft.outputs.id }}
+          args: ${{ matrix.args }}
+          # latest.json is written once both builds are in (next job), so the two never race
+          uploadUpdaterJson: false
+
+  updater:
+    name: latest.json
+    needs: [draft, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write latest.json from the signed installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.draft.outputs.id }}
+          VERSION: ${{ needs.draft.outputs.version }}
+        run: node .github/scripts/updater-json.mjs

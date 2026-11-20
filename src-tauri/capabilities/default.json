@@ -2,7 +2,10 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "What Katana Desk's windows may do (the main one and books opened in their own)",
-  "windows": ["main", "book-*"],
+  "windows": [
+    "main",
+    "book-*"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -20,6 +23,8 @@
     "core:webview:allow-set-webview-zoom",
     "dialog:allow-open",
     "dialog:allow-save",
-    "decorum:allow-show-snap-overlay"
+    "decorum:allow-show-snap-overlay",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

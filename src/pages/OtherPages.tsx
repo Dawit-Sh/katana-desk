@@ -6,12 +6,13 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { api, grimmory, m7 } from "../lib/api";
-import { fmtTime, plural } from "../lib/format";
+import { fmtTime, fmtWhen, plural } from "../lib/format";
 import { useStore, type CoverSize, type ThemePref } from "../lib/store";
 import { addFolder } from "./LocalPage";
 import { DictCredits, DictSettings } from "./DictSettings";
 import { dict } from "../lib/words";
 import { KeyList } from "../components/KeyMap";
+import { checkForUpdate, installUpdate, RELEASES, restartNow, useUpdates } from "../lib/updates";
 import { AaPanel } from "../reader/AaPanel";
 import { BUILT_IN, loadUiFonts, normalise, saveDefaultPrefs, type Prefs } from "../reader/prefs";
 
@@ -377,6 +378,101 @@ const ENGINES = [
   { name: "Open Library", what: "Covers found online in Change cover (Internet Archive)", licence: "Cover terms", url: "https://openlibrary.org/dev/docs/api/covers" },
 ];
 
+/** Settings › About: the version, Check for updates, and the update itself when one is out. */
+function UpdateRows() {
+  const u = useUpdates();
+  const [auto, setAuto] = useState(true);
+  useEffect(() => {
+    api.getSetting("update.auto").then((v) => setAuto(v !== "0"));
+    if (u.phase === "idle") useUpdates.setState({ checkedAt: undefined });
+    api.getSetting("update.checkedAt").then((v) => v && !useUpdates.getState().checkedAt && useUpdates.setState({ checkedAt: Number(v) }));
+  }, []);
+  const pct = u.total ? Math.min(100, (u.got / u.total) * 100) : 0;
+  const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`;
+  const words =
+    u.phase === "checking"
+      ? "Looking for a newer version…"
+      : u.phase === "none"
+        ? "You have the newest version."
+        : u.phase === "found"
+          ? `Version ${u.version} is out.`
+          : u.phase === "downloading"
+            ? `Downloading ${u.version} · ${u.total ? `${Math.round(pct)}% · ${mb(u.got)} of ${mb(u.total)}` : mb(u.got)}`
+            : u.phase === "ready"
+              ? `Version ${u.version} is installed. Restart to use it.`
+              : u.phase === "error"
+                ? "Couldn't check for updates. Are you online?"
+                : u.checkedAt
+                  ? `Last checked ${fmtWhen(u.checkedAt)}`
+                  : "Updates come from the GitHub releases, signed so only real ones install.";
+  return (
+    <>
+      <div className="srow">
+        <div className="tx">
+          <b>Updates</b>
+          <small className={u.phase === "error" ? "err" : ""} title={u.phase === "error" ? u.error : undefined}>
+            {words}
+          </small>
+          {u.phase === "downloading" && (
+            <div className="dlbar" aria-hidden="true">
+              <i style={{ width: `${pct}%` }} />
+            </div>
+          )}
+        </div>
+        {u.phase === "found" && u.kind === "package" ? (
+          <button type="button" className="pill" onClick={() => dict.openUrl(`${RELEASES}/latest`)}>
+            Get it<i className="ms">open_in_new</i>
+          </button>
+        ) : u.phase === "found" ? (
+          <button type="button" className="pill fill" onClick={() => installUpdate()}>
+            <i className="ms">download</i>Update now
+          </button>
+        ) : u.phase === "ready" ? (
+          <button type="button" className="pill fill" onClick={() => restartNow()}>
+            <i className="ms">restart_alt</i>Restart
+          </button>
+        ) : (
+          <button type="button" className="pill" disabled={u.phase === "checking" || u.phase === "downloading"} onClick={() => checkForUpdate()}>
+            <i className="ms">refresh</i>Check for updates
+          </button>
+        )}
+      </div>
+      {u.phase === "found" && !!u.notes && (
+        <div className="srow">
+          <div className="tx">
+            <b>What's new in {u.version}</b>
+            <small className="upnotes">{u.notes}</small>
+          </div>
+        </div>
+      )}
+      {u.phase === "found" && u.kind === "package" && (
+        <div className="srow">
+          <div className="tx">
+            <small>This copy was installed from a .deb or .rpm, so it can't replace itself. Download the new package from the release page, or use the AppImage, which updates itself.</small>
+          </div>
+        </div>
+      )}
+      <div className="srow">
+        <div className="tx">
+          <b>Look for updates by itself</b>
+          <small>Once a day, a little after Katana Desk starts. Nothing installs without you.</small>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={auto}
+          aria-label="Look for updates by itself"
+          className={`sw ${auto ? "on" : ""}`}
+          onClick={() => {
+            api.setSetting("update.auto", auto ? "0" : "1");
+            setAuto(!auto);
+          }}
+        />
+      </div>
+    </>
+  );
+}
+
 function About() {
   const [version, setVersion] = useState("");
   useEffect(() => {
@@ -395,6 +491,7 @@ function About() {
             GitHub<i className="ms">open_in_new</i>
           </button>
         </div>
+        <UpdateRows />
       </div>
       <div className="glab">Credits and licences</div>
       <div className="grp">
@@ -417,7 +514,7 @@ function About() {
 }
 
 export function SettingsPage() {
-  const [sec, setSec] = useState<Section>("general");
+  const [sec, setSec] = useState<Section>(() => (useUpdates.getState().phase === "found" ? "about" : "general"));
   return (
     <div className="setp">
       <nav className="lpane" aria-label="Settings">

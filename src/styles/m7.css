@@ -256,3 +256,8 @@
 .aa-settings { padding: 8px 20px 16px; max-width: 760px }
 .aa-settings .aa { overflow: visible; margin: 0 }
 .aa-settings .pfoot { display: flex; gap: 8px; padding-top: 12px }
+
+/* Settings › About: updates */
+.upnotes { white-space: pre-wrap; max-height: 180px; overflow: auto }
+.srow .tx .dlbar { margin-top: 6px }
+.nv .badge { margin-left: auto; height: 22px; padding: 0 10px; border-radius: 11px; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; background: var(--k-pri); color: var(--k-onpri) }

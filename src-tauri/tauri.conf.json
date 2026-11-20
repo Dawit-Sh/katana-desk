@@ -40,7 +40,9 @@
         "worker-src": "'self' blob:"
       },
       "devCsp": null,
-      "dangerousDisableAssetCspModification": ["style-src"],
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ],
       "assetProtocol": {
         "enable": true,
         "scope": []
@@ -49,11 +51,54 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "Katana",
     "copyright": "GPL-3.0-or-later",
     "category": "Utility",
     "shortDescription": "A reader that syncs with Grimmory",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true,
+    "longDescription": "A reader for EPUB, MOBI, AZW3, FB2, PDF, DjVu and comics that syncs reading places, highlights and bookmarks with Grimmory, with built-in offline dictionaries.",
+    "homepage": "https://github.com/Dawit-Sh/katana-desk",
+    "license": "GPL-3.0-or-later",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "recommends": [
+          "libarchive-tools"
+        ]
+      },
+      "rpm": {
+        "recommends": [
+          "bsdtar"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE2QTAyOEI0OTBFOUZDRjcKUldUMy9PbVF0Q2lncHN1SUtuRW94aXI5SUVoRUp6VlpLOHhJeG1TM3VHTktJSzdUWnhzMStWTngK",
+      "endpoints": [
+        "https://github.com/Dawit-Sh/katana-desk/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

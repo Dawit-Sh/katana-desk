@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { startUpdateChecks } from "./lib/updates";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -70,6 +71,9 @@ export function App() {
 
   // PDF covers, drawn from their first pages in the background
   useEffect(() => startPdfCovers(), []);
+
+  // a quiet look for a newer release once a day (the main window only)
+  useEffect(() => (useStore.getState().bookWindow ? undefined : startUpdateChecks()), []);
 
   // the library, kept fresh by the folder scanner
   useEffect(() => {

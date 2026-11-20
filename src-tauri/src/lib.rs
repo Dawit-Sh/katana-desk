@@ -164,7 +164,27 @@ fn reveal(path: String) -> Res<()> {
             .spawn()
             .map_err(err)?;
     }
+    // Linux: no file manager is sure to select a file, so the folder that holds it opens
+    #[cfg(target_os = "linux")]
+    {
+        let p = std::path::Path::new(&path);
+        let dir = if p.is_dir() { p } else { p.parent().unwrap_or(p) };
+        std::process::Command::new("xdg-open").arg(dir).spawn().map_err(err)?;
+    }
     Ok(())
+}
+
+/// How this copy was installed, for Settings › About's updates: Windows and the AppImage replace
+/// themselves; a .deb or .rpm install is updated by hand (or by the package manager).
+#[tauri::command]
+fn install_kind() -> &'static str {
+    if cfg!(windows) {
+        "windows"
+    } else if std::env::var_os("APPIMAGE").is_some() {
+        "appimage"
+    } else {
+        "package"
+    }
 }
 
 #[tauri::command]
@@ -648,6 +668,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_decorum::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .register_asynchronous_uri_scheme_protocol("kcover", grimmory::covers::handle)
         .register_asynchronous_uri_scheme_protocol("kpage", pages::handle)
         .setup(|app| {
@@ -708,6 +730,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            install_kind,
             get_library,
             get_book,
             add_paths,
