@@ -78,8 +78,42 @@ pub async fn server_place(app: &AppHandle, gid: i64, format: &str, timeout: Opti
         }
     })
     .await?;
+    Ok(place_from(&v, format, db::now()))
+}
+
+/// Reads a `/progress` answer. Grimmory keeps two kinds of place: its readers' (EPUB CFI, PDF or comic
+/// page, a percentage from 0 to 100) and KOReader's (a fraction from 0 to 1). Every reader push is also
+/// mirrored into the KOReader record under the device name "Grimmory", so that record only wins when
+/// there's no reader place, or when a real KOReader device wrote it last (its sync time is the book's
+/// last read time).
+pub fn place_from(v: &serde_json::Value, format: &str, now: i64) -> Option<ServerPlace> {
     let key = if format == "cbz" { "cbxProgress" } else if format == "pdf" { "pdfProgress" } else { "epubProgress" };
     let p = v.get(key).filter(|x| x.is_object());
+    let last = v.get("lastReadTime").and_then(parse_time);
+    if let Some(ko) = v.get("koreaderProgress").filter(|x| x.is_object()) {
+        let ko_time = ko.get("lastSyncTime").and_then(parse_time);
+        let mirror = ko.get("device").and_then(|x| x.as_str()) == Some("Grimmory");
+        let reader_place = p.map_or(false, |p| {
+            p.get("cfi").and_then(|x| x.as_str()).map_or(false, |c| c.starts_with("epubcfi("))
+                || p.get("percentage").and_then(|x| x.as_f64()).unwrap_or(0.0) > 0.0
+                || p.get("page").and_then(|x| x.as_i64()).is_some()
+        });
+        let ko_latest = !reader_place
+            || (!mirror
+                && matches!((ko_time, last), (Some(ServerTime::Zoned(a)), Some(ServerTime::Zoned(b))) if (a - b).abs() <= 5_000));
+        let frac = ko.get("percentage").and_then(|x| x.as_f64()).map(|x| x.clamp(0.0, 1.0));
+        if ko_latest && frac.unwrap_or(0.0) > 0.0 {
+            let time = ko_time.or(last);
+            return Some(ServerPlace {
+                cfi: None,
+                href: None,
+                fraction: frac,
+                page: None,
+                at: time.and_then(|t| t.trusted(now)),
+                zoneless: matches!(time, Some(ServerTime::Zoneless)),
+            });
+        }
+    }
     let pct = p.and_then(|p| p.get("percentage")).and_then(|x| x.as_f64()).map(|x| (x / 100.0).clamp(0.0, 1.0));
     let cfi = p
         .and_then(|p| p.get("cfi"))
@@ -90,18 +124,62 @@ pub async fn server_place(app: &AppHandle, gid: i64, format: &str, timeout: Opti
     let href = p.and_then(|p| p.get("href")).and_then(|x| x.as_str()).map(String::from);
     let page = p.and_then(|p| p.get("page")).and_then(|x| x.as_i64());
     if cfi.is_none() && pct.unwrap_or(0.0) <= 0.0 && page.is_none() {
-        return Ok(None);
+        return None;
     }
-    let time = p.and_then(|p| p.get("updatedAt")).and_then(parse_time).or_else(|| v.get("lastReadTime").and_then(parse_time));
-    let now = db::now();
-    Ok(Some(ServerPlace {
+    let time = p.and_then(|p| p.get("updatedAt")).and_then(parse_time).or(last);
+    Some(ServerPlace {
         cfi,
         href,
         fraction: pct,
         page,
         at: time.and_then(|t| t.trusted(now)),
         zoneless: matches!(time, Some(ServerTime::Zoneless)),
-    }))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::place_from;
+    use serde_json::json;
+
+    #[test]
+    fn koreader_place_wins_when_it_was_written_last() {
+        // The Hole on his Grimmory: only KOReader's fraction
+        let v = json!({"readProgress":0.0769231,"lastReadTime":"2026-11-20T09:34:13Z",
+            "koreaderProgress":{"percentage":0.0769231,"lastSyncTime":"2026-11-20T09:34:13Z"}});
+        let p = place_from(&v, "epub", 1_800_000_000_000).unwrap();
+        assert!((p.fraction.unwrap() - 0.0769231).abs() < 1e-6);
+        assert!(p.cfi.is_none());
+    }
+
+    #[test]
+    fn grimmorys_own_mirror_never_hides_the_cfi() {
+        // what his Grimmory answered right after a Katana Desk push
+        let v = json!({"readProgress":0.05,"lastReadTime":"2026-11-20T10:44:59Z",
+            "epubProgress":{"cfi":"epubcfi(/6/8!/4/2/1:0)","href":null,"percentage":5.0,"updatedAt":"2026-11-20T10:44:59Z"},
+            "koreaderProgress":{"percentage":0.05,"device":"Grimmory","deviceId":"Grimmory","lastSyncTime":"2026-11-20T10:44:59Z"}});
+        let p = place_from(&v, "epub", 1_800_000_000_000).unwrap();
+        assert_eq!(p.cfi.as_deref(), Some("epubcfi(/6/8!/4/2/1:0)"));
+        assert!((p.fraction.unwrap() - 0.05).abs() < 1e-9);
+        // a real KOReader device that synced last wins
+        let v2 = json!({"lastReadTime":"2026-11-20T11:00:00Z",
+            "epubProgress":{"cfi":"epubcfi(/6/8!/4/2/1:0)","percentage":5.0,"updatedAt":"2026-11-20T11:00:00Z"},
+            "koreaderProgress":{"percentage":0.3,"device":"Kindle","lastSyncTime":"2026-11-20T11:00:00Z"}});
+        let p2 = place_from(&v2, "epub", 1_800_000_000_000).unwrap();
+        assert!(p2.cfi.is_none());
+        assert!((p2.fraction.unwrap() - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn web_reader_place_is_a_percentage() {
+        let v = json!({"lastReadTime":"2026-11-16T18:55:18Z","epubProgress":{"cfi":"epubcfi(/6/12!/4/2,/2[pre],/4/1:884)",
+            "href":"OEBPS/text/x.xhtml","percentage":0.60133,"updatedAt":"2026-11-16T18:55:18Z"},
+            "koreaderProgress":{"percentage":0.5,"lastSyncTime":"2026-11-10T10:00:00Z"}});
+        let p = place_from(&v, "epub", 1_800_000_000_000).unwrap();
+        assert!((p.fraction.unwrap() - 0.0060133).abs() < 1e-7);
+        assert!(p.cfi.is_some());
+        assert!(p.at.is_some());
+    }
 }
 
 fn seen_json(s: &Seen) -> String {

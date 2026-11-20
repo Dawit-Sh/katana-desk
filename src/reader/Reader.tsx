@@ -47,6 +47,27 @@ ${dark ? `body :is(p, div, span, li, td, th, dd, dt, blockquote, h1, h2, h3, h4,
 
 const isDark = () => document.documentElement.dataset.theme !== "paper";
 
+/** A CFI that didn't land (another reader wrote it, or it doesn't resolve) leaves the book far from
+ *  where it should be: more than 3% of the book away from the place's own "how far". */
+const missed = (view: FoliateView, fraction: number) => {
+  const now = view.lastLocation?.fraction;
+  return typeof now !== "number" || Math.abs(now - fraction) > 0.03;
+};
+
+/** Goes to a place: its CFI, or how far through when the CFI is missing or doesn't land. */
+async function goToPlace(view: FoliateView, location: string | null, fraction: number | null) {
+  if (location) {
+    try {
+      await view.goTo(location);
+    } catch {
+      /* falls back below */
+    }
+    await new Promise((r) => setTimeout(r, 120));
+    if (fraction == null || !missed(view, fraction)) return;
+  }
+  if (fraction != null) await view.goToFraction(fraction);
+}
+
 export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
@@ -83,8 +104,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
     const v = viewRef.current;
     if (!go || !p || !v) return;
     acted.current = false;
-    if (p.location) await v.goTo(p.location).catch(() => {});
-    else if (p.fraction != null) await v.goToFraction(p.fraction);
+    await goToPlace(v, p.location, p.fraction);
   };
 
   useEffect(() => {
@@ -234,6 +254,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
         const fraction = place ? place.fraction : book.fraction;
         await view.init({ lastLocation: location ?? undefined, showTextStart: !location && !fraction });
         if (!location && fraction && fraction > 0) await view.goToFraction(fraction);
+        else if (location && fraction != null && missed(view, fraction)) await view.goToFraction(fraction);
         if (cancelled) return;
         if (place?.offer) setOffer(place.offer);
         setState("ready");

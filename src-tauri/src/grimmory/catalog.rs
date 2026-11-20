@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter};
 pub const K_LAST_SYNC: &str = "grimmory.lastSync";
 const K_LAST_FULL: &str = "grimmory.lastFull";
 const K_READ_MARK: &str = "grimmory.readMark";
+const K_SHAPE: &str = "grimmory.rowShape";
 const PAGE: usize = 50;
 const FULL_EVERY_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -106,9 +107,9 @@ fn t(v: &Value, k: &str) -> Option<i64> {
 }
 
 /// Writes one page of book summaries. Unchanged rows only get their "seen in this sync" mark.
-fn write_page(conn: &mut Connection, items: &[Value], gen: i64) -> rusqlite::Result<usize> {
+fn write_page(conn: &mut Connection, items: &[Value], gen: i64) -> rusqlite::Result<Vec<i64>> {
     let tx = conn.transaction()?;
-    let mut changed = 0;
+    let mut changed = vec![];
     {
         let mut seen = tx.prepare_cached("UPDATE gbooks SET seen = ?2 WHERE id = ?1 AND sig = ?3")?;
         let mut up = tx.prepare_cached(
@@ -145,7 +146,9 @@ fn write_page(conn: &mut Connection, items: &[Value], gen: i64) -> rusqlite::Res
                 i(b, "fileSizeKb"),
                 t(b, "addedOn"),
                 t(b, "lastReadTime"),
-                f(b, "readProgress").map(|p| (p / 100.0).clamp(0.0, 1.0)),
+                // Grimmory's list mixes KOReader's 0..1 with its readers' 0..100; the exact place is
+                // read per book right after (exact_progress)
+                f(b, "readProgress").map(|p| if p > 1.0 { p / 100.0 } else { p }.clamp(0.0, 1.0)),
                 s(b, "readStatus"),
                 t(b, "coverUpdatedOn"),
                 i(b, "pageCount"),
@@ -158,7 +161,7 @@ fn write_page(conn: &mut Connection, items: &[Value], gen: i64) -> rusqlite::Res
                 sig,
                 gen,
             ])?;
-            changed += 1;
+            changed.push(id);
         }
     }
     tx.commit()?;
@@ -186,15 +189,87 @@ fn progress(app: &AppHandle, done: usize, total: usize) {
     });
 }
 
+/// A book's detail answer in the shape of a list summary (for books the paging skipped).
+fn summary_of(mut d: Value) -> Value {
+    if let Some(o) = d.as_object_mut() {
+        let primary = o
+            .get("files")
+            .and_then(|f| f.as_array())
+            .and_then(|f| f.iter().find(|x| x.get("primary").and_then(|p| p.as_bool()).unwrap_or(false)).cloned());
+        if let Some(p) = primary {
+            for (from, to) in [("id", "primaryFileId"), ("fileName", "primaryFileName"), ("fileSizeKb", "fileSizeKb")] {
+                if let Some(v) = p.get(from) {
+                    o.entry(to).or_insert(v.clone());
+                }
+            }
+        }
+        for k in ["description", "files", "shelves", "epubProgress", "pdfProgress", "cbxProgress", "audiobookProgress", "koreaderProgress", "fileTypes"] {
+            o.remove(k);
+        }
+    }
+    d
+}
+
+/// Books Grimmory has that the pages didn't bring (books added in the same second can swap places
+/// between pages), fetched one by one. Returns every id Grimmory has.
+async fn fill_gaps(app: &AppHandle, gen: i64, have: &HashSet<i64>, changed: &mut Vec<i64>) -> GRes<HashSet<i64>> {
+    let all: HashSet<i64> = all_ids(app, &[]).await?.into_iter().collect();
+    let missing: Vec<i64> = all.iter().copied().filter(|id| !have.contains(id)).collect();
+    let mut details = stream::iter(missing)
+        .map(|id| json(app, move |c, base, tok| c.get(format!("{base}/api/v1/app/books/{id}")).bearer_auth(tok)))
+        .buffer_unordered(6);
+    let mut got = vec![];
+    while let Some(r) = details.next().await {
+        if let Ok(d) = r {
+            got.push(summary_of(d));
+        }
+    }
+    if !got.is_empty() {
+        changed.extend(write_page(&mut conn_of(app), &got, gen).map_err(|e| GErr::Other(e.to_string()))?);
+    }
+    Ok(all)
+}
+
+/// The exact reading place of books whose place changed: Grimmory's list can't say which kind it is.
+async fn exact_progress(app: &AppHandle, ids: Vec<i64>) {
+    let todo: Vec<(i64, String)> = {
+        let conn = conn_of(app);
+        ids.into_iter()
+            .filter_map(|id| {
+                conn.query_row("SELECT file_type FROM gbooks WHERE id = ?1 AND last_read IS NOT NULL", [id], |r| r.get::<_, Option<String>>(0))
+                    .ok()
+                    .map(|t| (id, t.unwrap_or_default()))
+            })
+            .collect()
+    };
+    let now = db::now();
+    let mut answers = stream::iter(todo)
+        .map(|(id, ty)| async move {
+            let v = json(app, move |c, base, tok| c.get(format!("{base}/api/v1/app/books/{id}/progress")).bearer_auth(tok)).await;
+            (id, ty, v)
+        })
+        .buffer_unordered(6);
+    while let Some((id, ty, v)) = answers.next().await {
+        let Ok(v) = v else { continue };
+        let format = match ty.as_str() {
+            "PDF" => "pdf",
+            "CBX" => "cbz",
+            _ => "epub",
+        };
+        let frac = super::sync::place_from(&v, format, now).and_then(|p| p.fraction);
+        let _ = conn_of(app).execute("UPDATE gbooks SET progress = ?2 WHERE id = ?1", params![id, frac]);
+    }
+}
+
 /// Every book, page by page. Returns the ids seen, or an error if any page failed.
-async fn fetch_all(app: &AppHandle, gen: i64) -> GRes<HashSet<i64>> {
+async fn fetch_all(app: &AppHandle, gen: i64, changed: &mut Vec<i64>) -> GRes<HashSet<i64>> {
     let first = page(app, 0, "addedOn").await?;
     let total = first.get("totalElements").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
     let pages = first.get("totalPages").and_then(|x| x.as_u64()).unwrap_or(1) as usize;
     let mut ids = HashSet::new();
     let items = content(&first);
     ids.extend(items.iter().filter_map(|b| i(b, "id")));
-    write_page(&mut conn_of(app), &items, gen).map_err(|e| GErr::Other(e.to_string()))?;
+    changed.extend(write_page(&mut conn_of(app), &items, gen).map_err(|e| GErr::Other(e.to_string()))?);
     let mut done = items.len();
     progress(app, done, total);
     let _ = app.emit("grimmory-changed", ());
@@ -204,7 +279,7 @@ async fn fetch_all(app: &AppHandle, gen: i64) -> GRes<HashSet<i64>> {
         let v = r?;
         let items = content(&v);
         ids.extend(items.iter().filter_map(|b| i(b, "id")));
-        write_page(&mut conn_of(app), &items, gen).map_err(|e| GErr::Other(e.to_string()))?;
+        changed.extend(write_page(&mut conn_of(app), &items, gen).map_err(|e| GErr::Other(e.to_string()))?);
         done += items.len();
         progress(app, done.min(total.max(done)), total);
         if last_emit.elapsed().as_millis() > 900 {
@@ -216,18 +291,17 @@ async fn fetch_all(app: &AppHandle, gen: i64) -> GRes<HashSet<i64>> {
 }
 
 /// Pages of one order until a page holds nothing new. `stop` says whether a book is already known.
-async fn fetch_until(app: &AppHandle, sort: &str, gen: i64, stop: impl Fn(&Value) -> bool) -> GRes<usize> {
-    let mut changed = 0;
+async fn fetch_until(app: &AppHandle, sort: &str, gen: i64, changed: &mut Vec<i64>, stop: impl Fn(&Value) -> bool) -> GRes<()> {
     for n in 0..40 {
         let v = page(app, n, sort).await?;
         let items = content(&v);
         let fresh: Vec<Value> = items.iter().take_while(|b| !stop(b)).cloned().collect();
-        changed += write_page(&mut conn_of(app), &fresh, gen).map_err(|e| GErr::Other(e.to_string()))?;
+        changed.extend(write_page(&mut conn_of(app), &fresh, gen).map_err(|e| GErr::Other(e.to_string()))?);
         if fresh.len() < items.len() || !v.get("hasNext").and_then(|x| x.as_bool()).unwrap_or(false) {
             break;
         }
     }
-    Ok(changed)
+    Ok(())
 }
 
 async fn all_ids(app: &AppHandle, query: &[(&str, String)]) -> GRes<Vec<i64>> {
@@ -238,8 +312,16 @@ async fn all_ids(app: &AppHandle, query: &[(&str, String)]) -> GRes<Vec<i64>> {
 
 /// Libraries, shelves and magic shelves, with the books on each shelf.
 async fn shelves(app: &AppHandle) -> GRes<()> {
-    let libs = json(app, |c, base, tok| c.get(format!("{base}/api/v1/app/libraries")).bearer_auth(tok)).await?;
-    let shelves = json(app, |c, base, tok| c.get(format!("{base}/api/v1/app/shelves")).bearer_auth(tok)).await?;
+    // the app API's library list can fail on a server (500 on his); the web app's has the same ids and names
+    let libs = match json(app, |c, base, tok| c.get(format!("{base}/api/v1/app/libraries")).bearer_auth(tok)).await {
+        Ok(v) => v,
+        Err(_) => json(app, |c, base, tok| c.get(format!("{base}/api/v1/libraries")).bearer_auth(tok))
+            .await
+            .unwrap_or(Value::Array(vec![])),
+    };
+    let shelves = json(app, |c, base, tok| c.get(format!("{base}/api/v1/app/shelves")).bearer_auth(tok))
+        .await
+        .unwrap_or(Value::Array(vec![]));
     let magic = json(app, |c, base, tok| c.get(format!("{base}/api/v1/app/shelves/magic")).bearer_auth(tok))
         .await
         .unwrap_or(Value::Array(vec![]));
@@ -353,13 +435,21 @@ async fn run(app: &AppHandle, full: bool) -> GRes<()> {
         (count, mark)
     };
     let last_full = setting(app, K_LAST_FULL).and_then(|s| s.parse::<i64>().ok());
-    let full = full || count == 0 || last_full.map_or(true, |t| gen - t > FULL_EVERY_MS);
+    // rows written by an older Katana Desk are written again once (their progress unit changed in 0.2)
+    let stale = setting(app, K_SHAPE).as_deref() != Some("2");
+    if stale {
+        let _ = conn_of(app).execute("UPDATE gbooks SET sig = NULL", []);
+        set(app, K_SHAPE, "2");
+    }
+    let full = full || stale || count == 0 || last_full.map_or(true, |t| gen - t > FULL_EVERY_MS);
     let mark = setting(app, K_READ_MARK).and_then(|s| s.parse::<i64>().ok()).or(mark);
     let before = read_marks(app);
 
+    let mut changed: Vec<i64> = vec![];
     if full {
-        let ids = fetch_all(app, gen).await?;
-        drop_missing(&conn_of(app), &ids).map_err(|e| GErr::Other(e.to_string()))?;
+        let ids = fetch_all(app, gen, &mut changed).await?;
+        let all = fill_gaps(app, gen, &ids, &mut changed).await?;
+        drop_missing(&conn_of(app), &all).map_err(|e| GErr::Other(e.to_string()))?;
         set(app, K_LAST_FULL, &gen.to_string());
     } else {
         // new books, newest first, until one we know
@@ -369,19 +459,21 @@ async fn run(app: &AppHandle, full: bool) -> GRes<()> {
             let rows = st.query_map([], |r| r.get(0)).map_err(|e| GErr::Other(e.to_string()))?;
             rows.flatten().collect()
         };
-        fetch_until(app, "addedOn", gen, |b| i(b, "id").map_or(false, |id| known.contains(&id))).await?;
+        fetch_until(app, "addedOn", gen, &mut changed, |b| i(b, "id").map_or(false, |id| known.contains(&id))).await?;
         // reading places that moved, most recent first, until the last one already seen
         if let Some(mark) = mark {
-            fetch_until(app, "lastReadTime", gen, |b| t(b, "lastReadTime").map_or(true, |lr| lr <= mark)).await?;
+            fetch_until(app, "lastReadTime", gen, &mut changed, |b| t(b, "lastReadTime").map_or(true, |lr| lr <= mark)).await?;
         } else {
-            fetch_until(app, "lastReadTime", gen, |b| t(b, "lastReadTime").is_none()).await?;
+            fetch_until(app, "lastReadTime", gen, &mut changed, |b| t(b, "lastReadTime").is_none()).await?;
         }
-        // books that went away
-        let ids: HashSet<i64> = all_ids(app, &[]).await?.into_iter().collect();
-        if !ids.is_empty() {
-            drop_missing(&conn_of(app), &ids).map_err(|e| GErr::Other(e.to_string()))?;
+        // books the pages didn't bring, and books that went away
+        let have: HashSet<i64> = known.iter().copied().chain(changed.iter().copied()).collect();
+        let all = fill_gaps(app, gen, &have, &mut changed).await?;
+        if !all.is_empty() {
+            drop_missing(&conn_of(app), &all).map_err(|e| GErr::Other(e.to_string()))?;
         }
     }
+    exact_progress(app, changed).await;
     let _ = app.emit("grimmory-changed", ());
     if let Err(e) = shelves(app).await {
         eprintln!("katana: Grimmory shelves: {e}");
@@ -520,8 +612,8 @@ mod tests {
             .map(|n| serde_json::json!({"id": n, "title": format!("T{n}"), "authors": ["A"], "readProgress": 50.0,
                 "lastReadTime": "2026-11-20T09:00:00Z", "primaryFileType": "EPUB", "fileSizeKb": 100}))
             .collect();
-        assert_eq!(write_page(&mut c, &page, 1).unwrap(), 40);
-        assert_eq!(write_page(&mut c, &page, 2).unwrap(), 0);
+        assert_eq!(write_page(&mut c, &page, 1).unwrap().len(), 40);
+        assert_eq!(write_page(&mut c, &page, 2).unwrap().len(), 0);
         let p: f64 = c.query_row("SELECT progress FROM gbooks WHERE id = 3", [], |r| r.get(0)).unwrap();
         assert!((p - 0.5).abs() < 1e-9);
         // 30 of 40 gone at once: kept

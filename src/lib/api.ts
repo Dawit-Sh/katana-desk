@@ -125,6 +125,7 @@ export const gcoverUrl = (id: number, v: number | null) => convertFileSrc(`${id}
 /** Grimmory's file types that the reader opens in this version. */
 export const G_READABLE = new Set(["EPUB", "MOBI", "AZW3", "AZW", "FB2", "CBX", "CBZ"]);
 export const gFormat = (b: { fileType: string | null; fileName: string | null }) => {
+  if (b.fileType === "AUDIOBOOK") return "Audiobook";
   const ext = b.fileName?.split(".").pop()?.toUpperCase();
   if (b.fileType === "CBX") return ext && ext.length <= 4 ? ext : "CBZ";
   return b.fileType ?? ext ?? "";

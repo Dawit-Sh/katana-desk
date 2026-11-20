@@ -157,8 +157,10 @@ pub fn start(app: &AppHandle, id: i64) {
         match outcome {
             Outcome::Done(path) => {
                 retries().lock().unwrap().remove(&id);
+                // a fast download can finish before its size was ever shown
+                let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(total);
                 match add_to_library(&app, id, &path) {
-                    Ok(_) => put(&app, id, "done", total, total, None),
+                    Ok(_) => put(&app, id, "done", size, size, None),
                     Err(e) => put(&app, id, "failed", done, total, Some(&e)),
                 }
                 let _ = app.emit("library-changed", ());

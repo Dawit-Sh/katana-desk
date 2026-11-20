@@ -47,8 +47,9 @@ export function GBookSheet({ book }: { book: GBook }) {
   let action: React.ReactNode;
   if (!readable) {
     action = (
-      <button type="button" className="pill fill wide" disabled title={`${fmt} reading comes in a later version`}>
-        <i className="ms">menu_book</i>{fmt} comes later
+      <button type="button" className="pill fill wide" disabled title={book.fileType === "AUDIOBOOK" ? "Audiobooks play in Grimmory" : `${fmt} reading comes in a later version`}>
+        <i className="ms">{book.fileType === "AUDIOBOOK" ? "headphones" : "menu_book"}</i>
+        {book.fileType === "AUDIOBOOK" ? "Plays in Grimmory" : `${fmt} comes later`}
       </button>
     );
   } else if (coming) {
