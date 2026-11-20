@@ -26,7 +26,7 @@ pub struct ScanState {
 }
 
 pub struct Library {
-    pub db: Db,
+    pub db: std::sync::Arc<Db>,
     pub covers_dir: PathBuf,
     scan_lock: Mutex<()>,
     pub state: Mutex<ScanState>,
@@ -34,7 +34,7 @@ pub struct Library {
 }
 
 impl Library {
-    pub fn new(db: Db, covers_dir: PathBuf) -> Library {
+    pub fn new(db: std::sync::Arc<Db>, covers_dir: PathBuf) -> Library {
         Library {
             db,
             covers_dir,

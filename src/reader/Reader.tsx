@@ -2,7 +2,9 @@
 // Katana draws the page frame around it (chapter on top, page and pages left in the chapter below).
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { api, fileUrl, type Book } from "../lib/api";
+import { listen } from "@tauri-apps/api/event";
+import { api, fileUrl, grimmory, type Book, type Offer } from "../lib/api";
+import { fmtWhen } from "../lib/format";
 import { CaptionButtons } from "../components/TitleBar";
 import serif400 from "@fontsource/noto-serif/files/noto-serif-latin-400-normal.woff2?url";
 import serif400i from "@fontsource/noto-serif/files/noto-serif-latin-400-italic.woff2?url";
@@ -59,13 +61,30 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   const perPage = useRef(0);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  // Grimmory's place, when it's behind this one: asked, never applied on its own
+  const [offer, setOffer] = useState<Offer | null>(null);
+  // a page turned (or a link followed) since the book opened: only then is it reading
+  const acted = useRef(false);
 
   // Save the reading place: shortly after each turn, and when the book closes.
   const saveTimer = useRef<number>(0);
   const save = () => {
     const r = last.current;
-    if (!r?.cfi) return;
-    api.saveProgress(book.id, r.cfi, r.fraction ?? 0, r.tocItem?.label?.trim() || null).catch(() => {});
+    if (!r?.cfi) return Promise.resolve();
+    const idx = (r as unknown as { section?: { current: number } }).section?.current;
+    const id = idx != null ? viewRef.current?.book?.sections?.[idx]?.id : null;
+    const href = typeof id === "string" ? id : null;
+    return api.saveProgress(book.id, r.cfi, r.fraction ?? 0, r.tocItem?.label?.trim() || null, href, acted.current).catch(() => {});
+  };
+
+  const answer = async (go: boolean) => {
+    setOffer(null);
+    const p = await grimmory.answer(book.id, go).catch(() => null);
+    const v = viewRef.current;
+    if (!go || !p || !v) return;
+    acted.current = false;
+    if (p.location) await v.goTo(p.location).catch(() => {});
+    else if (p.fraction != null) await v.goToFraction(p.fraction);
   };
 
   useEffect(() => {
@@ -79,6 +98,7 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       const v = viewRef.current;
       if (!v?.renderer) return;
       lastTurn.current = Date.now();
+      acted.current = true;
       if (how === "prev") v.prev();
       else if (how === "next") v.next();
       else if (how === "left") v.goLeft();
@@ -130,7 +150,10 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
     // A click in the outer fifth of the page turns it; the middle is left for reading and selecting.
     const onDocClick = (doc: Document) => (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0) return;
-      if ((e.target as Element)?.closest?.("a[href]")) return;
+      if ((e.target as Element)?.closest?.("a[href]")) {
+        acted.current = true;
+        return;
+      }
       const sel = doc.getSelection();
       if (sel && !sel.isCollapsed) return;
       const frame = doc.defaultView?.frameElement as HTMLElement | null;
@@ -204,8 +227,15 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
           doc.addEventListener("click", onDocClick(doc));
         });
         view.addEventListener("external-link", (e: Event) => e.preventDefault());
-        await view.init({ lastLocation: book.location ?? undefined, showTextStart: !book.location });
+        // a Grimmory book (or a Local copy of one) opens at Grimmory's place when that's the latest read
+        const place = await grimmory.openPlace(book.id).catch(() => null);
         if (cancelled) return;
+        const location = place ? place.location : book.location;
+        const fraction = place ? place.fraction : book.fraction;
+        await view.init({ lastLocation: location ?? undefined, showTextStart: !location && !fraction });
+        if (!location && fraction && fraction > 0) await view.goToFraction(fraction);
+        if (cancelled) return;
+        if (place?.offer) setOffer(place.offer);
         setState("ready");
         api.markOpened(book.id).catch(() => {});
         themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
@@ -221,6 +251,10 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
     host.addEventListener("wheel", onWheel, { passive: false });
+    // Grimmory's place moved while the book is open (read on the Fire): ask
+    const unOffer = listen<number>("grimmory-offer", (e) => {
+      if (e.payload === book.id) grimmory.offer(book.id).then((o) => o && setOffer(o)).catch(() => {});
+    });
 
     // Reading time for the reading card and the Journal: counted while the window is in front
     // and a page was turned in the last two minutes.
@@ -233,7 +267,9 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       cancelled = true;
       clearInterval(tick);
       clearTimeout(saveTimer.current);
-      save();
+      // the place goes up as the book closes
+      save().finally(() => grimmory.closed(book.id).catch(() => {}));
+      unOffer.then((f) => f());
       themeObserver.disconnect();
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onResize);
@@ -274,6 +310,17 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
         </button>
         <CaptionButtons />
       </header>
+      {offer && (
+        <div className="offer" role="alertdialog" aria-label="Grimmory has an earlier place">
+          <i className="ms">cloud_sync</i>
+          <span>
+            Grimmory has this book at {offer.page != null ? `p. ${offer.page}` : `${Math.round((offer.fraction ?? 0) * 100)}%`}
+            {offer.at ? `, read ${fmtWhen(offer.at).replace(/^Today, /, "today at ")}` : ""} on another device
+          </span>
+          <button type="button" className="pill" onClick={() => answer(true)}>Go there</button>
+          <button type="button" className="pill fill" onClick={() => answer(false)}>Stay here</button>
+        </div>
+      )}
       <div className="pgarea">
         <div className="strip">{chapter}</div>
         <div className="page" ref={hostRef}>

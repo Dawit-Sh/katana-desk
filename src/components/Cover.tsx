@@ -1,5 +1,6 @@
-import type { Book } from "../lib/api";
-import { fileUrl } from "../lib/api";
+import { useState } from "react";
+import type { Book, GBook } from "../lib/api";
+import { fileUrl, gcoverUrl } from "../lib/api";
 
 // Drawn covers for books without a picture, in the canvas's cover colours: [from, to, text].
 const PALETTE: [string, string, string][] = [
@@ -71,5 +72,33 @@ export function Peek({ book, side }: { book: Book; side: "a" | "b" }) {
       <b>{book.title}</b>
       <s>{book.author ?? ""}</s>
     </span>
+  );
+}
+
+/** A Grimmory book's cover: drawn at once, Grimmory's picture laid over it as soon as it's on this PC. */
+export function GCover({ book, size = "", progress }: { book: GBook; size?: "" | "l" | "m" | "s"; progress?: number | null }) {
+  const [failed, setFailed] = useState(false);
+  const comic = book.fileType === "CBX";
+  const base = size === "l" ? 11 : size === "m" ? 8 : size === "s" ? 6.5 : 15;
+  const frac = progress ?? 0;
+  const colors = coverColors({ title: book.title, author: book.authors } as Book);
+  return (
+    <div className={`cv ${size} ${comic ? "comic" : ""}`} style={colors}>
+      <b style={{ fontSize: titleSize(book.title, base) }}>{book.title}</b>
+      <s>{book.authors ?? ""}</s>
+      {!failed && (
+        <img
+          key={book.coverV ?? 0}
+          src={gcoverUrl(book.id, book.coverV)}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          onError={() => setFailed(true)}
+        />
+      )}
+      {progress != null && frac > 0.004 && frac < 0.995 && (
+        <span className="pr"><i style={{ width: `${Math.round(frac * 100)}%` }} /></span>
+      )}
+    </div>
   );
 }

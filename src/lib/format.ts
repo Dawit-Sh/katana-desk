@@ -35,3 +35,14 @@ export const progressLabel = (fraction: number | null, readable: boolean, format
   const p = Math.round(fraction * 100);
   return p < 1 ? "Just started" : `${p}%`;
 };
+
+/** "just now", "2 min ago", "3 h ago", then the day. */
+export const fmtAgo = (ms: number) => {
+  const s = (Date.now() - ms) / 1000;
+  if (s < 50) return "just now";
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
+  if (s < 6 * 3600) return `${Math.round(s / 3600)} h ago`;
+  return fmtWhen(ms);
+};
+
+export const fmtMb = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1048576).toFixed(1)} MB`);

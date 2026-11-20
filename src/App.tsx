@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { api, READABLE, type ScanState } from "./lib/api";
+import { api, grimmory, READABLE, type Dl, type GStatus, type ScanState } from "./lib/api";
 import { useStore } from "./lib/store";
 import { TitleBar } from "./components/TitleBar";
 import { Rail, Sidebar } from "./components/Sidebar";
 import { LocalPage, addBooks } from "./pages/LocalPage";
 import { SettingsPage, SoonPage } from "./pages/OtherPages";
+import { GrimmoryPage } from "./pages/GrimmoryPage";
 import { Reader } from "./reader/Reader";
 
 const win = getCurrentWindow();
@@ -52,10 +53,31 @@ export function App() {
     const a = listen("library-changed", () => useStore.getState().reload());
     const b = listen<ScanState>("scan-state", (e) => useStore.getState().setScan(e.payload));
     const c = win.onFocusChanged(({ payload }) => document.documentElement.classList.toggle("blurred", !payload));
+    // Grimmory: its state, its library (reloaded at most every 1.5 s while it fills in), its downloads
+    const d = listen<GStatus>("grimmory-status", (e) => useStore.getState().setG(e.payload));
+    let catTimer = 0;
+    let catLast = 0;
+    const e = listen("grimmory-changed", () => {
+      const run = () => {
+        catLast = Date.now();
+        useStore.getState().reloadCatalog().catch(() => {});
+      };
+      clearTimeout(catTimer);
+      const wait = Math.max(0, 1500 - (Date.now() - catLast));
+      catTimer = window.setTimeout(run, wait);
+    });
+    const f = listen<Dl>("grimmory-download", (ev) => useStore.getState().setDownload(ev.payload));
+    grimmory.status().then((st) => useStore.getState().setG(st)).catch(() => {});
+    grimmory.downloads().then((list) => list.forEach((x) => useStore.getState().setDownload(x))).catch(() => {});
+    useStore.getState().reloadCatalog().catch(() => {});
     return () => {
       a.then((f) => f());
       b.then((f) => f());
       c.then((f) => f());
+      d.then((f) => f());
+      e.then((f) => f());
+      f.then((f) => f());
+      clearTimeout(catTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -128,6 +150,8 @@ export function App() {
     switch (s.page) {
       case "local":
         return <LocalPage />;
+      case "grimmory":
+        return <GrimmoryPage />;
       case "settings":
         return <SettingsPage />;
       default:

@@ -121,7 +121,9 @@ function useGridKeys(gridRef: React.RefObject<HTMLDivElement | null>, books: Boo
 }
 
 export function LocalPage() {
-  const { folders, books, place, goPlace, selectedId, sheetOpen, query, loaded } = useStore();
+  const { folders, books: all, place, goPlace, selectedId, sheetOpen, query, loaded } = useStore();
+  // books downloaded from Grimmory show on the Grimmory page
+  const books = useMemo(() => all.filter((b) => b.source === "local"), [all]);
   const gridRef = useRef<HTMLDivElement>(null);
   const l = useMemo(() => listing(folders, books, place), [folders, books, place]);
   const found = useMemo(() => (query.trim() ? search(books, query) : null), [books, query]);

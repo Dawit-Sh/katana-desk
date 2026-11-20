@@ -1,16 +1,11 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
-import { plural } from "../lib/format";
+import { api, grimmory } from "../lib/api";
+import { fmtTime, plural } from "../lib/format";
 import { useStore, type Page, type ThemePref } from "../lib/store";
 import { addFolder } from "./LocalPage";
 
 const SOON: Partial<Record<Page, { icon: string; title: string; text: string }>> = {
-  grimmory: {
-    icon: "cloud",
-    title: "Grimmory comes next",
-    text: "Signing in to Grimmory on the Zima, your whole library, downloads and the reading place synced with the Fire come in the next version. Local books work now.",
-  },
   lists: { icon: "checklist", title: "Lists", text: "Your reading lists come in a later version." },
   bookmarks: { icon: "bookmarks", title: "Bookmarks", text: "Bookmarks across all your books come with highlights and notes, in a later version." },
   words: { icon: "dictionary", title: "My words", text: "Words you save from the built-in dictionaries come in a later version." },
@@ -57,6 +52,73 @@ const THEMES: { id: ThemePref; name: string; pic: React.ReactNode }[] = [
   },
 ];
 
+/** Settings › Sources: Grimmory's address, who's signed in, sync now, sign out. */
+function GrimmorySettings() {
+  const { g, setG, catalog, go } = useStore();
+  const [url, setUrl] = useState(g?.url ?? "");
+  const [error, setError] = useState("");
+  useEffect(() => setUrl(g?.url ?? ""), [g?.url]);
+  if (!g) return null;
+  const changed = url.trim().replace(/\/+$/, "") !== g.url;
+  const save = async () => {
+    setError("");
+    try {
+      setG(await grimmory.setUrl(url));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+  return (
+    <div className="grp">
+      <div className="srow">
+        <i className="ms" style={{ color: "var(--k-var)" }}>{g.signedIn ? (g.reach === "offline" ? "cloud_off" : "cloud_done") : "cloud"}</i>
+        <div className="tx">
+          <b>Grimmory</b>
+          <small>
+            {g.signedIn
+              ? `Signed in as ${g.user ?? "you"} · ${plural(catalog.books.length, "book")}${g.lastSync ? ` · synced ${fmtTime(g.lastSync)}` : ""}${g.reach === "offline" ? " · can't be reached right now" : ""}`
+              : g.signedOut
+                ? "Grimmory signed this PC out. Sign in again to sync."
+                : "Not signed in"}
+          </small>
+        </div>
+        {g.signedIn ? (
+          <>
+            <button type="button" className="pill" disabled={g.syncing} onClick={() => grimmory.sync(true).catch(() => {})} title="Fetch the whole library again (only changed books are written)">
+              <i className={`ms ${g.syncing ? "spin" : ""}`}>{g.syncing ? "progress_activity" : "sync"}</i>Sync everything
+            </button>
+            <button type="button" className="pill" onClick={async () => { await grimmory.signOut(); setG(await grimmory.status()); }}>
+              <i className="ms">logout</i>Sign out
+            </button>
+          </>
+        ) : (
+          <button type="button" className="pill fill" onClick={() => go("grimmory")}><i className="ms">login</i>Sign in</button>
+        )}
+      </div>
+      <div className="srow">
+        <div className="tx">
+          <b>Server address</b>
+          <small>Where Grimmory answers on your network. Another address means signing in again.</small>
+          {error && <small className="err">{error}</small>}
+        </div>
+        <span className="field" style={{ width: 280 }}>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} onKeyDown={(e) => e.key === "Enter" && changed && save()} aria-label="Server address" />
+        </span>
+        <button type="button" className="pill" disabled={!changed} onClick={save}>Save</button>
+      </div>
+      <div className="srow">
+        <div className="tx">
+          <b>Reading places sync both ways</b>
+          <small>
+            A Grimmory book (or a Local copy of the same file) sends its place a few seconds after you turn a page and when you
+            close it, and opens where you left it on the Fire. If Grimmory's place is behind yours, Katana Desk asks first.
+          </small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { themePref, setThemePref, folders, books } = useStore();
   const [version, setVersion] = useState("");
@@ -84,6 +146,8 @@ export function SettingsPage() {
           ))}
         </div>
       </div>
+      <div className="glab">Sources</div>
+      <GrimmorySettings />
       <div className="glab">Local folders</div>
       <div className="grp">
         {folders.map((f) => {

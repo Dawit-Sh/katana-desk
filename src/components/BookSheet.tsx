@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api, READABLE, type Book } from "../lib/api";
-import { fmtDate, fmtSize, fmtWhen } from "../lib/format";
+import { api, grimmory, READABLE, type Book } from "../lib/api";
+import { fmtAgo, fmtDate, fmtSize, fmtWhen } from "../lib/format";
 import { useStore } from "../lib/store";
 import { Cover } from "./Cover";
 
@@ -12,6 +12,18 @@ export function BookSheet({ book }: { book: Book }) {
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => setMenu(false), [book.id]);
+  // the same file on Grimmory? Then its place syncs with the Fire (checked by partial MD5, once)
+  const signedIn = useStore((s) => !!s.g?.signedIn);
+  const [gid, setGid] = useState<number | null>(book.grimmoryId);
+  useEffect(() => {
+    setGid(book.grimmoryId);
+    if (book.grimmoryId != null || !signedIn || !READABLE.has(book.format)) return;
+    let live = true;
+    grimmory.match(book.id).then((id) => live && setGid(id)).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [book.id, book.grimmoryId, book.format, signedIn]);
   useEffect(() => {
     if (!menu) return;
     const off = (e: MouseEvent) => {
@@ -90,6 +102,12 @@ export function BookSheet({ book }: { book: Book }) {
         <span className="pill tone" style={{ height: 30, fontSize: 12.5 }} title={book.path}>
           <i className="ms">folder</i>On this PC
         </span>
+        {gid != null && (
+          <span className="pill tone" style={{ height: 30, fontSize: 12.5 }} title="The same file is on Grimmory: its reading place syncs with the Fire">
+            <i className="ms">cloud_done</i>
+            {book.placeState === "pending" ? "Place syncing…" : book.syncedAt ? `Synced ${fmtAgo(book.syncedAt)}` : "On Grimmory too"}
+          </span>
+        )}
         <span className="su">Added {fmtDate(book.addedAt)}</span>
       </div>
     </aside>

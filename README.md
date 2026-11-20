@@ -23,6 +23,29 @@ Built with [Tauri 2](https://github.com/tauri-apps/tauri), React and TypeScript 
 - Reading: arrows, Space, Page Up/Down, the wheel and clicks in the outer fifth turn pages; the chapter on top, the page
   and pages left in the chapter below; the reading place is remembered.
 
+## Milestone 2: Grimmory
+
+- Sign in to [Grimmory](https://github.com/grimmory-tools/grimmory) from the Grimmory page (or Settings › Sources, where the
+  server address can be changed). The password goes to Grimmory once and is never kept; the sign-in renews itself through
+  one path, one renewal at a time, saved the moment it arrives (Grimmory replaces the refresh token on every renewal).
+- The whole library comes down once, page by page (Grimmory's app API, 50 books a page, six pages at a time) into SQLite,
+  showing as it arrives. Later starts fetch only what changed: new books, reading places that moved elsewhere, books that
+  went away, and once a day a full pass for changed titles and covers. Libraries, shelves and magic shelves come too, as
+  filters, with sorting (last read, added, title, author), covers or list, and search over title, author, series and tags.
+- Covers are fetched once at full size, made library-sized and kept on this PC (`kcover://`).
+- Downloads pause and go on where they stopped (HTTP Range with `If-Range`, partial bytes kept apart until the file is
+  whole). They wait for silence, never for a total time; a lost connection waits for Grimmory and goes on by itself;
+  Try again checks Grimmory at once.
+- The reading place syncs both ways for Grimmory books and for Local copies of the same file (matched by KOReader's partial
+  MD5, read from Grimmory as twelve 1 KB samples): it goes up a few seconds after a page turn and when the book closes, and
+  a book opens at Grimmory's place when that's the latest read. A place behind this PC's is asked about first ("Go there" or
+  "Stay here"). A time without a zone is never compared with this PC's clock.
+- One slow reply never shows Grimmory offline (a second look 1.5 s later); offline, it looks again after 2, 4, 8, 16 and
+  then every 30 minutes, and places waiting go up when it's back.
+
+Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/seanmonstar/reqwest)); the place rules are in
+`place.rs` with their tests (`cargo test`).
+
 ## Keys
 
 | Where | Keys |

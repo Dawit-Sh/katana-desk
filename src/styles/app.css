@@ -256,3 +256,63 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .rmsg { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; color: var(--k-var); padding: 0 40px }
 .rmsg .ms { font-size: 40px }
 .rmsg b { color: var(--k-on); font-size: 17px }
+
+/* ---------- Grimmory ---------- */
+/* continue reading: cover and text straight on the library ground, no boxes */
+.cards { display: flex; gap: 32px; align-items: center; flex-wrap: wrap }
+.rcard { display: flex; gap: 16px; align-items: center; min-width: 0; text-align: left; border-radius: 12px }
+.rcard .rct { gap: 4px }
+.rcard .ti { font-size: 20px }
+.rcard.small .ti { font-size: 16px }
+.ov { font-size: 12px; font-weight: 600; color: var(--k-tint) }
+.rcard.small .ov { color: var(--k-var); font-weight: 500 }
+.rcard .pbar { width: 220px }
+.cv.s { width: 56px; height: 84px; padding: 6px 5px } .cv.s b { font-size: 6.5px } .cv.s s { font-size: 4.5px }
+.seg { display: flex; background: var(--k-sc); border-radius: 12px; padding: 4px; gap: 2px }
+.seg > button { min-width: 34px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--k-var); padding: 0 8px }
+.seg .ms { font-size: 18px }
+.seg .on { background: var(--k-pric); color: var(--k-onpric) }
+.more { height: 1px }
+/* list view */
+.rows { display: grid; gap: 2px }
+.lrow { display: grid; grid-template-columns: 40px minmax(0, 2fr) minmax(0, 1.2fr) 70px 110px; gap: 16px; align-items: center; padding: 6px 12px 6px 6px; border-radius: 12px; outline: none; content-visibility: auto; contain-intrinsic-size: auto 72px }
+.lrow:hover { background: var(--k-cap-hover) }
+.lrow.sel { background: var(--k-pric); color: var(--k-onpric) }
+.lrow.sel .su { color: var(--k-onpric) }
+.lrow .cv.s { width: 40px; height: 60px; padding: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.35) }
+.lrow .cv.s b, .lrow .cv.s s { display: none }
+.lrow .t1 { font-family: var(--font-book); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.lrow .su { white-space: nowrap }
+/* sign-in */
+.signin { margin: auto; width: min(440px, 100%); display: grid; gap: 14px; padding: 28px; background: var(--k-sc); border-radius: 28px }
+.signin .hd { display: grid; justify-items: center; text-align: center; gap: 8px; margin-bottom: 4px }
+.signin .hd .ms { font-size: 44px; color: var(--k-var) }
+.signin .hd b { font-size: 20px; font-weight: 600 }
+.signin .hd p { margin: 0; color: var(--k-var); line-height: 1.5 }
+.field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--k-var) }
+.field input { height: 44px; border-radius: 16px; background: var(--k-bg); border: 1px solid var(--k-outv); padding: 0 16px; font-size: 15px; font-weight: 400; color: var(--k-on); user-select: text }
+.field input:focus { border-color: var(--k-pri); outline: 1px solid var(--k-pri) }
+.signin .pill.fill { height: 44px; justify-content: center; margin-top: 4px }
+.err { color: #e6837a; font-size: 13px; line-height: 1.45 }
+:root[data-theme="paper"] .err { color: #b3261e }
+/* downloads */
+.dlrow { display: grid; gap: 8px; padding: 12px 14px; background: var(--k-sc); border-radius: 20px }
+.dlrow .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px }
+.dlrow .top .su { flex: 1 }
+.dlrow .ib { width: 32px; height: 32px }
+.dlrow .ib .ms { font-size: 20px }
+.dlrow .pbar { margin: 0 }
+.menu.wide { min-width: 300px; max-height: 420px; overflow: auto }
+.menu .mh { font-size: 12px; font-weight: 600; color: var(--k-var); padding: 8px 12px 4px }
+.menu button.on { background: var(--k-pric); color: var(--k-onpric) }
+.menu button.on .ms { color: var(--k-onpric) }
+.menu .dli { padding: 8px 12px; display: grid; gap: 4px; font-size: 13px }
+.menu .dli .row2 { justify-content: space-between; flex-wrap: nowrap }
+.menu .dli b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.menu .dli .ib { width: 30px; height: 30px }
+.menu .dli .ib .ms { font-size: 18px }
+/* the question before going back, in the reader */
+.offer { position: absolute; left: 50%; top: 48px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 18px; border-radius: 999px; background: var(--k-sch); box-shadow: 0 10px 30px var(--k-shadow); font-size: 13.5px; max-width: calc(100% - 32px); animation: sheetin .18s ease-out }
+.offer .ms { color: var(--k-var) }
+.offer span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.offer .pill { height: 32px }

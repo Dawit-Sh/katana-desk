@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 pub struct Db(pub Mutex<Connection>);
 
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +36,12 @@ pub struct Book {
     pub location: Option<String>,
     pub fraction: Option<f64>,
     pub chapter: Option<String>,
+    /// "local" (from a Local folder or added one by one) or "grimmory" (downloaded from Grimmory)
+    pub source: String,
+    /// The Grimmory book this file is (a download, or a Local copy matched by partial MD5)
+    pub grimmory_id: Option<i64>,
+    pub place_state: String,
+    pub synced_at: Option<i64>,
 }
 
 /// What the scanner knows about a file before it reads it.
@@ -114,6 +120,85 @@ impl Db {
                 ",
             )?;
         }
+        if version < 2 {
+            // Grimmory (milestone 2). Additive only: nothing in version 1 changes meaning.
+            conn.execute_batch(
+                "
+                ALTER TABLE books ADD COLUMN source TEXT NOT NULL DEFAULT 'local';
+                ALTER TABLE books ADD COLUMN grimmory_id INTEGER;
+                ALTER TABLE books ADD COLUMN place_at INTEGER;
+                ALTER TABLE books ADD COLUMN place_state TEXT NOT NULL DEFAULT 'clean';
+                ALTER TABLE books ADD COLUMN server_place TEXT;
+                ALTER TABLE books ADD COLUMN synced_at INTEGER;
+                ALTER TABLE books ADD COLUMN href TEXT;
+                CREATE INDEX IF NOT EXISTS books_grimmory ON books(grimmory_id);
+                CREATE TABLE IF NOT EXISTS gbooks (
+                    id INTEGER PRIMARY KEY,
+                    library_id INTEGER,
+                    title TEXT NOT NULL,
+                    authors TEXT,
+                    series TEXT,
+                    series_number REAL,
+                    file_id INTEGER,
+                    file_type TEXT,
+                    file_name TEXT,
+                    size_kb INTEGER,
+                    added_on INTEGER,
+                    last_read INTEGER,
+                    progress REAL,
+                    read_status TEXT,
+                    cover_v INTEGER,
+                    page_count INTEGER,
+                    language TEXT,
+                    publisher TEXT,
+                    categories TEXT,
+                    tags TEXT,
+                    published TEXT,
+                    rating INTEGER,
+                    sig TEXT,
+                    seen INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS glibraries (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    icon TEXT,
+                    book_count INTEGER
+                );
+                CREATE TABLE IF NOT EXISTS gshelves (
+                    kind TEXT NOT NULL,
+                    id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    icon TEXT,
+                    book_count INTEGER,
+                    PRIMARY KEY (kind, id)
+                );
+                CREATE TABLE IF NOT EXISTS gshelf_books (
+                    kind TEXT NOT NULL,
+                    shelf_id INTEGER NOT NULL,
+                    book_id INTEGER NOT NULL,
+                    PRIMARY KEY (kind, shelf_id, book_id)
+                );
+                CREATE TABLE IF NOT EXISTS gdownloads (
+                    book_id INTEGER PRIMARY KEY,
+                    state TEXT NOT NULL,
+                    done INTEGER NOT NULL DEFAULT 0,
+                    total INTEGER NOT NULL DEFAULT 0,
+                    error TEXT,
+                    open_after INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS gmatch (
+                    local_id INTEGER NOT NULL,
+                    grimmory_id INTEGER NOT NULL,
+                    local_hash TEXT NOT NULL,
+                    size_kb INTEGER,
+                    result TEXT NOT NULL,
+                    checked_at INTEGER NOT NULL,
+                    PRIMARY KEY (local_id, grimmory_id)
+                );
+                ",
+            )?;
+        }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))
     }
@@ -154,7 +239,7 @@ pub fn remove_folder(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-const BOOK_COLS: &str = "id, path, folder_id, rel_dir, format, title, author, size, cover, added_at, opened_at, location, fraction, chapter";
+const BOOK_COLS: &str = "id, path, folder_id, rel_dir, format, title, author, size, cover, added_at, opened_at, location, fraction, chapter, source, grimmory_id, place_state, synced_at";
 
 fn row_book(r: &rusqlite::Row) -> rusqlite::Result<Book> {
     Ok(Book {
@@ -172,6 +257,10 @@ fn row_book(r: &rusqlite::Row) -> rusqlite::Result<Book> {
         location: r.get(11)?,
         fraction: r.get(12)?,
         chapter: r.get(13)?,
+        source: r.get(14)?,
+        grimmory_id: r.get(15)?,
+        place_state: r.get(16)?,
+        synced_at: r.get(17)?,
     })
 }
 
@@ -260,12 +349,41 @@ pub fn set_cover(conn: &Connection, id: i64, cover: Option<&str>) -> rusqlite::R
     Ok(())
 }
 
-pub fn save_progress(conn: &Connection, id: i64, location: &str, fraction: f64, chapter: Option<&str>) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE books SET location = ?2, fraction = ?3, chapter = ?4, opened_at = ?5 WHERE id = ?1",
-        params![id, location, fraction, chapter, now()],
-    )?;
-    Ok(())
+/// Saves the reading place. A book linked to Grimmory is marked waiting to go up, unless the place
+/// didn't move (opening a book saves where it already was).
+pub fn save_progress(
+    conn: &Connection,
+    id: i64,
+    location: &str,
+    fraction: f64,
+    chapter: Option<&str>,
+    href: Option<&str>,
+    turned: bool,
+) -> rusqlite::Result<bool> {
+    let old: Option<(Option<String>, Option<f64>)> = conn
+        .query_row("SELECT location, fraction FROM books WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()?;
+    // the first place after opening (where the book was put) isn't reading: only a turned page is
+    let moved = turned
+        && match &old {
+            Some((Some(l), f)) => l != location || (f.unwrap_or(0.0) - fraction).abs() > 1e-6,
+            _ => true,
+        };
+    let t = now();
+    if moved {
+        conn.execute(
+            "UPDATE books SET location = ?2, fraction = ?3, chapter = ?4, opened_at = ?5, href = ?6, place_at = ?5,
+                place_state = CASE WHEN grimmory_id IS NULL THEN place_state ELSE 'pending' END
+             WHERE id = ?1",
+            params![id, location, fraction, chapter, t, href],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE books SET location = ?2, fraction = ?3, chapter = ?4, opened_at = ?5, href = COALESCE(?6, href) WHERE id = ?1",
+            params![id, location, fraction, chapter, t, href],
+        )?;
+    }
+    Ok(moved)
 }
 
 pub fn mark_opened(conn: &Connection, id: i64) -> rusqlite::Result<()> {
@@ -305,3 +423,42 @@ pub fn loose_paths(conn: &Connection) -> rusqlite::Result<Vec<(i64, String)>> {
     let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
     rows.collect()
 }
+
+/// A book downloaded from Grimmory. A new download of the same Grimmory book takes over the old row,
+/// so its reading place stays.
+#[allow(clippy::too_many_arguments)]
+pub fn upsert_download(
+    conn: &Connection,
+    path: &str,
+    format: &str,
+    title: &str,
+    author: Option<&str>,
+    size: i64,
+    mtime: i64,
+    hash: Option<&str>,
+    grimmory_id: i64,
+) -> rusqlite::Result<i64> {
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM books WHERE path = ?1 OR (source = 'grimmory' AND grimmory_id = ?2) ORDER BY path = ?1 DESC LIMIT 1",
+            params![path, grimmory_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(id) = existing {
+        conn.execute(
+            "UPDATE books SET path = ?2, format = ?3, title = ?4, author = ?5, size = ?6, mtime = ?7, hash = ?8,
+                missing = 0, source = 'grimmory', grimmory_id = ?9, folder_id = NULL, loose = 0 WHERE id = ?1",
+            params![id, path, format, title, author, size, mtime, hash, grimmory_id],
+        )?;
+        return Ok(id);
+    }
+    conn.execute(
+        "INSERT INTO books (path, format, title, author, size, mtime, hash, added_at, source, grimmory_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'grimmory', ?9)",
+        params![path, format, title, author, size, mtime, hash, now(), grimmory_id],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+

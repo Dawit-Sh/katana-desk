@@ -63,9 +63,10 @@ function ReadingCard() {
 }
 
 export function useNavItems() {
-  const count = useStore((s) => s.books.length);
+  const count = useStore((s) => s.books.filter((b) => b.source === "local").length);
+  const gcount = useStore((s) => (s.g?.signedIn ? s.catalog.books.length : 0));
   const sources: Item[] = [
-    { page: "grimmory", icon: "cloud", label: "Grimmory" },
+    { page: "grimmory", icon: "cloud", label: "Grimmory", count: gcount },
     { page: "local", icon: "folder", label: "Local", count },
   ];
   const pages: Item[] = [
@@ -82,6 +83,7 @@ export function Sidebar({ drawer, onPick }: { drawer?: boolean; onPick?: () => v
   const go = useStore((s) => s.go);
   const goPlace = useStore((s) => s.goPlace);
   const { sources, pages } = useNavItems();
+  const signedIn = useStore((s) => !!s.g?.signedIn);
   const pick = (p: Page) => {
     if (p === "local" && page === "local") goPlace({ folderId: null, sub: [] });
     else go(p);
@@ -98,9 +100,11 @@ export function Sidebar({ drawer, onPick }: { drawer?: boolean; onPick?: () => v
     <nav className={`side ${drawer ? "drawer" : ""}`} aria-label="Katana">
       <div className="sl">Sources</div>
       {sources.map(row)}
-      <button type="button" className="nv" onClick={() => pick("grimmory")} title="Grimmory servers come in the next version">
-        <i className="ms">add</i><span>Add a server</span>
-      </button>
+      {!signedIn && (
+        <button type="button" className="nv" onClick={() => pick("grimmory")} title="Sign in to Grimmory">
+          <i className="ms">add</i><span>Add a server</span>
+        </button>
+      )}
       <ReadingCard />
       <div className="sl">Your reading</div>
       {pages.map(row)}

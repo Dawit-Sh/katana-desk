@@ -1,11 +1,15 @@
 import { create } from "zustand";
-import { api, type Book, type Folder, type ScanState } from "./api";
+import { api, grimmory, type Book, type Catalog, type Dl, type Folder, type GStatus, type ScanState } from "./api";
 
 export type Page = "grimmory" | "local" | "lists" | "bookmarks" | "words" | "journal" | "settings";
 export type ThemePref = "system" | "graphite" | "paper";
 
 /** Where you are in Local: an added folder (or the top) and the folders below it. */
 export type Place = { folderId: number | null; sub: string[] };
+
+export type GSort = "lastRead" | "added" | "title" | "author";
+/** Which Grimmory books show: all, a library, a shelf or magic shelf, and how far read. */
+export type GFilter = { kind: "all" | "library" | "shelf" | "magic"; id?: number; status: "any" | "reading" | "unread" | "read" };
 
 type State = {
   folders: Folder[];
@@ -21,7 +25,26 @@ type State = {
   themePref: ThemePref;
   folded: boolean;
   dropping: boolean;
+  g: GStatus | null;
+  catalog: Catalog;
+  downloads: Record<number, Dl>;
+  gSelected: number | null;
+  gSheet: boolean;
+  gSort: GSort;
+  gFilter: GFilter;
+  gView: "grid" | "list";
+  /** a Grimmory book to open as soon as its download is done */
+  openWhenHere: number | null;
   reload: () => Promise<void>;
+  reloadCatalog: () => Promise<void>;
+  setG: (g: GStatus) => void;
+  setDownload: (d: Dl) => void;
+  gSelect: (id: number | null, sheet?: boolean) => void;
+  setGSort: (s: GSort) => void;
+  setGFilter: (f: GFilter) => void;
+  setGView: (v: "grid" | "list") => void;
+  /** opens a Grimmory book: right away when it's on this PC, else once it's downloaded */
+  openG: (id: number) => void;
   setScan: (s: ScanState) => void;
   go: (page: Page) => void;
   goPlace: (p: Place) => void;
@@ -49,6 +72,49 @@ export const useStore = create<State>((set, get) => ({
   themePref: "system",
   folded: false,
   dropping: false,
+  g: null,
+  catalog: { books: [], libraries: [], shelves: [] },
+  downloads: {},
+  gSelected: null,
+  gSheet: false,
+  gSort: "lastRead",
+  gFilter: { kind: "all", status: "any" },
+  gView: "grid",
+  openWhenHere: null,
+  reloadCatalog: async () => {
+    const catalog = await grimmory.catalog();
+    const { gSelected } = get();
+    const still = gSelected == null || catalog.books.some((b) => b.id === gSelected);
+    set({ catalog, ...(still ? {} : { gSelected: null, gSheet: false }) });
+  },
+  setG: (g) => set({ g }),
+  setDownload: (d) => {
+    const downloads = { ...get().downloads };
+    if (d.state === "none") delete downloads[d.bookId];
+    else downloads[d.bookId] = d;
+    set({ downloads });
+    if (d.state === "done" && d.localId != null && get().openWhenHere === d.bookId) {
+      const localId = d.localId;
+      set({ openWhenHere: null });
+      get().reload().then(() => get().open(localId));
+    }
+  },
+  gSelect: (id, sheet = true) => set({ gSelected: id, gSheet: id != null && sheet }),
+  setGSort: (gSort) => {
+    set({ gSort });
+    api.setSetting("grimmorySort", gSort);
+  },
+  setGFilter: (gFilter) => set({ gFilter }),
+  setGView: (gView) => {
+    set({ gView });
+    api.setSetting("grimmoryView", gView);
+  },
+  openG: (id) => {
+    const b = get().catalog.books.find((x) => x.id === id);
+    if (b?.localId != null && get().books.some((x) => x.id === b.localId)) return get().open(b.localId);
+    set({ openWhenHere: id });
+    grimmory.download(id, true);
+  },
   reload: async () => {
     const lib = await api.library();
     const { selectedId, place } = get();
@@ -64,7 +130,8 @@ export const useStore = create<State>((set, get) => ({
     });
   },
   setScan: (scan) => set({ scan }),
-  go: (page) => set({ page, sheetOpen: false, query: page === "local" ? get().query : "" }),
+  go: (page) =>
+    set({ page, sheetOpen: false, gSheet: false, query: page === "local" || page === "grimmory" ? get().query : "" }),
   goPlace: (place) => set({ place, page: "local", query: "" }),
   select: (id, sheet = true) => set({ selectedId: id, sheetOpen: id != null && sheet }),
   closeSheet: () => set({ sheetOpen: false }),
@@ -73,7 +140,11 @@ export const useStore = create<State>((set, get) => ({
     set({ readingId: null });
     get().reload();
   },
-  setQuery: (query) => set({ query, page: "local" }),
+  // the search covers the source you're in (Grimmory or Local); from other pages, Grimmory when signed in
+  setQuery: (query) => {
+    const { page, g } = get();
+    set({ query, page: page === "local" || page === "grimmory" ? page : g?.signedIn ? "grimmory" : "local" });
+  },
   setThemePref: (themePref) => {
     set({ themePref });
     api.setSetting("theme", themePref);

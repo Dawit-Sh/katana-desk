@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod db;
+mod grimmory;
 mod library;
 mod meta;
 
@@ -71,10 +72,31 @@ fn scan_now(app: AppHandle) {
     library::scan_in_background(app, None);
 }
 
+/// Saves the reading place. `turned`: a page was turned since the book opened (only then is it reading,
+/// and a Grimmory book's place goes up a few seconds later).
 #[tauri::command]
-fn save_progress(lib: State<Library>, id: i64, location: String, fraction: f64, chapter: Option<String>) -> Res<()> {
-    let conn = lib.db.0.lock().unwrap();
-    db::save_progress(&conn, id, &location, fraction, chapter.as_deref()).map_err(err)
+#[allow(clippy::too_many_arguments)]
+fn save_progress(
+    app: AppHandle,
+    lib: State<Library>,
+    id: i64,
+    location: String,
+    fraction: f64,
+    chapter: Option<String>,
+    href: Option<String>,
+    turned: Option<bool>,
+) -> Res<()> {
+    let (moved, linked) = {
+        let conn = lib.db.0.lock().unwrap();
+        let moved = db::save_progress(&conn, id, &location, fraction, chapter.as_deref(), href.as_deref(), turned.unwrap_or(true))
+            .map_err(err)?;
+        let linked = db::book(&conn, id).map_err(err)?.and_then(|b| b.grimmory_id).is_some();
+        (moved, linked)
+    };
+    if moved && linked {
+        grimmory::sync::schedule_push(&app, id);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -142,6 +164,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_decorum::init())
+        .register_asynchronous_uri_scheme_protocol("kcover", grimmory::covers::handle)
         .setup(|app| {
             let handle = app.handle().clone();
             // KATANA_DATA_DIR: a separate library for test runs
@@ -151,12 +174,17 @@ pub fn run() {
             };
             let covers = data.join("covers");
             std::fs::create_dir_all(&covers)?;
-            let db = db::Db::open(&data.join("katana.db"))?;
+            let db = std::sync::Arc::new(db::Db::open(&data.join("katana.db"))?);
             let folders = db::folders(&db.0.lock().unwrap()).unwrap_or_default();
             let loose = db::loose_paths(&db.0.lock().unwrap()).unwrap_or_default();
-            app.manage(Library::new(db, covers.clone()));
+            app.manage(Library::new(db.clone(), covers.clone()));
+            let gdir = data.join("grimmory");
+            std::fs::create_dir_all(gdir.join("books"))?;
+            app.manage(grimmory::Grimmory::new(db.clone(), gdir.clone()));
 
             library::allow(&handle, &covers, true);
+            // downloaded Grimmory books are read from here
+            library::allow(&handle, &gdir.join("books"), true);
             library::start_watcher(&handle);
             for f in &folders {
                 let p = PathBuf::from(&f.path);
@@ -167,6 +195,7 @@ pub fn run() {
                 library::allow(&handle, &PathBuf::from(p), false);
             }
             library::scan_in_background(handle.clone(), None);
+            grimmory::start(&handle);
 
             if let Some(win) = app.get_webview_window("main") {
                 // KATANA_QUIET=1: for test runs, the window opens off-screen, out of the taskbar and never takes focus
@@ -207,7 +236,25 @@ pub fn run() {
             get_setting,
             set_setting,
             reveal,
-            has_mica
+            has_mica,
+            grimmory::grimmory_status,
+            grimmory::grimmory_sign_in,
+            grimmory::grimmory_sign_out,
+            grimmory::grimmory_set_url,
+            grimmory::grimmory_check,
+            grimmory::catalog::grimmory_catalog,
+            grimmory::catalog::grimmory_sync,
+            grimmory::downloads::grimmory_downloads,
+            grimmory::downloads::grimmory_download,
+            grimmory::downloads::grimmory_pause,
+            grimmory::downloads::grimmory_resume,
+            grimmory::downloads::grimmory_cancel,
+            grimmory::sync::grimmory_open_place,
+            grimmory::sync::grimmory_offer,
+            grimmory::sync::grimmory_answer,
+            grimmory::sync::grimmory_closed,
+            grimmory::sync::grimmory_book_sync,
+            grimmory::matching::grimmory_match
         ])
         .run(tauri::generate_context!())
         .expect("error while running Katana Desk");
