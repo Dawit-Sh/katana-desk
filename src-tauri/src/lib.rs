@@ -144,7 +144,11 @@ pub fn run() {
         .plugin(tauri_plugin_decorum::init())
         .setup(|app| {
             let handle = app.handle().clone();
-            let data = app.path().app_data_dir()?;
+            // KATANA_DATA_DIR: a separate library for test runs
+            let data = match std::env::var("KATANA_DATA_DIR") {
+                Ok(d) => PathBuf::from(d),
+                Err(_) => app.path().app_data_dir()?,
+            };
             let covers = data.join("covers");
             std::fs::create_dir_all(&covers)?;
             let db = db::Db::open(&data.join("katana.db"))?;

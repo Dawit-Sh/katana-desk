@@ -55,6 +55,8 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
   const [leftText, setLeftText] = useState("");
   const last = useRef<Relocate | null>(null);
   const lastTurn = useRef(Date.now());
+  // characters per page in the current layout, learned from chapters that fill several pages
+  const perPage = useRef(0);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -146,12 +148,25 @@ export function Reader({ book, onClose }: { book: Book; onClose: () => void }) {
       const d = e.detail;
       last.current = d;
       setChapter(d.tocItem?.label?.trim() ?? "");
-      const loc = d.location;
-      const page = d.pageItem?.label ? `p. ${d.pageItem.label}` : loc ? `${loc.current + 1} / ${loc.total}` : "";
-      setPageText(page);
       const r = viewRef.current?.renderer;
-      if (r && typeof r.pages === "number" && r.pages > 2) {
-        const left = Math.max(0, r.pages - 2 - r.page);
+      const book_ = viewRef.current?.book;
+      const textPages = r && typeof r.pages === "number" ? r.pages - 2 : 0;
+      // Pages: foliate-js counts the book in 1,500-byte locations, which don't move on every turn.
+      // Katana counts pages of the window as it is laid out now: the book's size over what one page holds.
+      const sections = (book_?.sections ?? []).filter((x: { linear?: string }) => x.linear !== "no");
+      const totalBytes = sections.reduce((a: number, x: { size?: number }) => a + (x.size ?? 0), 0);
+      const idx = (d as unknown as { section?: { current: number } }).section?.current;
+      const here = idx != null ? book_?.sections?.[idx]?.size ?? 0 : 0;
+      if (textPages >= 3 && here > 4000) perPage.current = here / textPages;
+      const cols = window.innerWidth >= 1200 ? 2 : 1;
+      const per = perPage.current || 1900 * cols;
+      if (d.pageItem?.label) setPageText(`p. ${d.pageItem.label}`);
+      else if (totalBytes > 0) {
+        const total = Math.max(1, Math.round(totalBytes / per));
+        setPageText(`${Math.min(total, Math.floor((d.fraction ?? 0) * total) + 1)} / ${total}`);
+      } else if (d.location) setPageText(`${d.location.current + 1} / ${d.location.total}`);
+      if (textPages > 0) {
+        const left = Math.max(0, textPages - r.page);
         setLeftText(left === 0 ? "Last page in chapter" : `${left} left in chapter`);
       } else setLeftText("");
       clearTimeout(saveTimer.current);
