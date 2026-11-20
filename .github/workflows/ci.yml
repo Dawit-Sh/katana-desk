@@ -24,13 +24,13 @@ jobs:
           - name: Linux
             os: ubuntu-22.04
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
       - name: Linux packages (WebKitGTK and friends)
         if: runner.os == 'Linux'
-        timeout-minutes: 15
+        timeout-minutes: 45
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |

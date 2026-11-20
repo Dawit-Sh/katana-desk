@@ -45,13 +45,13 @@ jobs:
             os: ubuntu-22.04
             args: --bundles appimage,deb,rpm
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
       - name: Linux packages (WebKitGTK and friends)
         if: runner.os == 'Linux'
-        timeout-minutes: 15
+        timeout-minutes: 45
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
