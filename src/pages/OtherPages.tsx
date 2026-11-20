@@ -5,6 +5,7 @@ import { fmtTime, plural } from "../lib/format";
 import { useStore, type Page, type ThemePref } from "../lib/store";
 import { addFolder } from "./LocalPage";
 import { DictCredits, DictSettings } from "./DictSettings";
+import { dict } from "../lib/words";
 
 const SOON: Partial<Record<Page, { icon: string; title: string; text: string }>> = {
   lists: { icon: "checklist", title: "Lists", text: "Your reading lists come in a later version." },
@@ -187,8 +188,27 @@ export function SettingsPage() {
             <small>The desktop version of Katana. Free software under GPL-3.0-or-later · github.com/Dawit-Sh/katana-desk</small>
           </div>
         </div>
+        {ENGINES.map((e) => (
+          <div className="srow" key={e.name}>
+            <div className="tx">
+              <b>{e.name}</b>
+              <small>{e.what}</small>
+            </div>
+            <button type="button" className="pill" title={e.url} onClick={() => dict.openUrl(e.url)}>
+              {e.licence}
+              <i className="ms">open_in_new</i>
+            </button>
+          </div>
+        ))}
         <DictCredits />
       </div>
     </div>
   );
 }
+
+/** The reading engines inside Katana Desk, with their licences. */
+const ENGINES = [
+  { name: "foliate-js", what: "Reads EPUB, MOBI, AZW3 and FB2", licence: "MIT", url: "https://github.com/johnfactotum/foliate-js" },
+  { name: "PDF.js", what: "Mozilla's PDF reader: draws PDFs and their text", licence: "Apache-2.0", url: "https://github.com/mozilla/pdf.js" },
+  { name: "DjVuLibre 3.5.28", what: "Reads DjVu books and their hidden text", licence: "GPL-2.0-or-later", url: "https://djvu.sourceforge.net/" },
+];

@@ -244,6 +244,7 @@ pub fn scan_in_background(app: AppHandle, only: Option<Vec<i64>>) {
             scan_folder(&app, f);
         }
         check_loose(&app);
+        crate::pages::fill_covers(&app);
         set_scanning(&app, false);
         let _ = app.emit("library-changed", ());
     });

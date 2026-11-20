@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-pub const FORMATS: &[&str] = &["epub", "mobi", "prc", "azw3", "azw", "fb2", "fbz", "cbz", "pdf", "djvu", "djv"];
+pub const FORMATS: &[&str] = &["epub", "mobi", "prc", "azw3", "azw", "fb2", "fbz", "cbz", "cbr", "pdf", "djvu", "djv"];
 
 pub fn format_of(path: &Path) -> Option<String> {
     let name = path.file_name()?.to_string_lossy().to_lowercase();
@@ -44,6 +44,7 @@ pub fn read(path: &Path, format: &str) -> Meta {
         "cbz" => cbz(path),
         "fb2" => std::fs::read(path).ok().map(|b| fb2(&b)),
         "fbz" => fbz(path),
+        "djvu" | "cbr" => Some(Meta { title: None, author: None, cover: crate::pages::cover_of(path, format) }),
         _ => None,
     };
     let mut m = r.unwrap_or_default();

@@ -8,6 +8,7 @@ mod highlights;
 mod library;
 mod marks;
 mod meta;
+mod pages;
 mod resumable;
 mod words;
 
@@ -515,6 +516,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_decorum::init())
         .register_asynchronous_uri_scheme_protocol("kcover", grimmory::covers::handle)
+        .register_asynchronous_uri_scheme_protocol("kpage", pages::handle)
         .setup(|app| {
             let handle = app.handle().clone();
             // KATANA_DATA_DIR: a separate library for test runs
@@ -649,7 +651,12 @@ pub fn run() {
             grimmory::sync::grimmory_answer,
             grimmory::sync::grimmory_closed,
             grimmory::sync::grimmory_book_sync,
-            grimmory::matching::grimmory_match
+            grimmory::matching::grimmory_match,
+            pages::page_book,
+            pages::djvu_text,
+            pages::page_book_closed,
+            pages::pdf_cover,
+            pages::pdf_covers_todo
         ])
         .run(tauri::generate_context!())
         .expect("error while running Katana Desk");

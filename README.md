@@ -2,8 +2,9 @@
 
 The desktop version of [Katana](https://github.com/Dawit-Sh/Katana) (刀), a reader that syncs with Grimmory. Windows first.
 
-Built with [Tauri 2](https://github.com/tauri-apps/tauri), React and TypeScript ([Vite](https://github.com/vitejs/vite)), and
-[foliate-js](https://github.com/johnfactotum/foliate-js) for EPUB, MOBI, AZW3, FB2 and CBZ.
+Built with [Tauri 2](https://github.com/tauri-apps/tauri), React and TypeScript ([Vite](https://github.com/vitejs/vite)),
+[foliate-js](https://github.com/johnfactotum/foliate-js) for EPUB, MOBI, AZW3 and FB2, [PDF.js](https://github.com/mozilla/pdf.js)
+for PDF, and [DjVuLibre](https://djvu.sourceforge.net/) (built from source, in `src-tauri/djvu/`) for DjVu.
 
 ## Milestone 1: Shell and Local
 
@@ -113,6 +114,37 @@ Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/sean
 
 The dictionary files are made once by `tools/build-dictionary.py` (see its notes) and published with the app's releases.
 
+## Milestone 6: PDF, DjVu and comics
+
+- PDFs, DjVu books and comics (CBZ, and CBR) open in a page view: each page drawn sharp for the size it's shown at,
+  only the pages near the screen drawn.
+- The top bar has zoom (out, the percentage, in; Ctrl + / Ctrl − / Ctrl 0, Ctrl and the wheel), and pictures for how the
+  page fits (Fit width, Fit page) and how pages are laid out (Scroll, One page, Two pages, the first page and wide pages
+  alone, like a printed book). Comics also have Left to right and Right to left (manga), and Scroll for webtoons. The
+  choice is kept per book, and the last one is where a new book starts.
+- A side panel with three tabs: Pages (every page small, drawn as it scrolls into view, with its find matches and a
+  ribbon on bookmarked pages), Contents (the PDF's or DjVu's outline, the part you're in lit up) and Marks (the same
+  marks list as EPUB: highlights, notes, bookmarks, words, export). It floats over the page, or docks with the pin.
+- Find (Ctrl F) in a PDF's text and a DjVu's hidden text: every match is marked on the page, a counter ("2 of 14"),
+  Enter and Shift Enter, and the matches per page in Pages. The first match is the next one from the page you're on.
+- Select words (an invisible text layer lies over the page) and the selection card shows: highlights in five colours
+  and four styles (highlight, underline, strike, squiggle), notes, Copy and Look up (the word card from milestone 5;
+  a double-click on a word looks it up too). A highlight with a note gets a pin on the page; click it, or the highlight,
+  for its card. The highlighter in the top bar highlights words as soon as they're selected. They're kept in the same
+  highlights table as EPUB, placed by page and the words' place in the page's text (`page:12:340-388`).
+- Bookmarks: Ctrl B, the corner of any page, or the ribbon button; the ribbon hangs on marked pages. "Back to p. N"
+  after any jump (contents, pages, find, a mark, the slider). Keys: arrows, Space, Page Up/Down, Home, End.
+- The reading place is saved by page. For Grimmory books and Local copies of them, PDF and comic places sync with
+  Grimmory by page (`pdfProgress` and `cbxProgress`, pages from 1), and bookmarks sync both ways the way Grimmory's own
+  readers keep them: a PDF's in `pageNumber`, a comic's page in `cfi`, unnamed ones going up as "Page 12". PDF and DjVu
+  highlights stay on this PC (Grimmory's PDF reader keeps its own annotations in another shape). DjVu books come from
+  Local folders only (Grimmory has no DjVu).
+- Library covers for PDFs (their first page, drawn by PDF.js in the background, once per book), DjVu books (their
+  first page, drawn by DjVuLibre) and CBR comics.
+- DjVuLibre 3.5.28 is compiled into the app from source with the `cc` crate (MSVC on Windows, g++ or clang++ on Linux):
+  see `src-tauri/djvu/djvulibre/KATANA.md`. A CBR that is really a ZIP opens directly; a RAR one is unpacked once into
+  the app's data folder by bsdtar (Windows' own `tar.exe` reads RAR), or unrar, 7-Zip or unar on Linux.
+
 ## Keys
 
 | Where | Keys |
@@ -120,6 +152,7 @@ The dictionary files are made once by `tools/build-dictionary.py` (see its notes
 | Anywhere | Ctrl K search · Ctrl O open a file · Ctrl , settings · F11 full screen |
 | Library | Arrows move between covers · Space or a click shows the book's page · Enter or a double-click opens it · Esc closes the page |
 | Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Ctrl B bookmark · Ctrl F search · Alt ← back to where you jumped from · Ctrl + / Ctrl − / Ctrl 0 text size · a double-click on a word looks it up · Esc closes a card, note or panel, then the book |
+| PDF, DjVu, comics | ↓ ↑ scroll, then turn · → ← the next or previous page (swapped right to left) · Space Page Down Page Up a screen or a page · Home End · Ctrl + / Ctrl − zoom, Ctrl 0 fits again, Ctrl and the wheel · Ctrl F find · Ctrl B bookmark · Alt ← back |
 | Review cards | Space shows the meaning · 1 Again · 2 I know it · Esc closes |
 | Words selected | H highlight · 1 to 5 in that colour · N with a note · C copy · L look up · Esc lets go |
 | A highlight's card | Delete removes it · Esc closes it |

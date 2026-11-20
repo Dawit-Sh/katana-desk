@@ -147,27 +147,8 @@ export async function exportWords(bookId: number | null = null): Promise<string 
 
 export const mb = (n: number) => (n >= 10e6 ? `${Math.round(n / 1e6)} MB` : `${(n / 1e6).toFixed(1)} MB`);
 
-/**
- * The sentence a word sits in, from the page: the block the words are in, cut at sentence ends
- * around them, at most about 260 characters. Returns null when there's no text around.
- */
-export function sentenceAround(range: Range): string | null {
-  const start = range.startContainer;
-  const el = (start.nodeType === Node.ELEMENT_NODE ? (start as Element) : start.parentElement)?.closest(
-    "p, li, blockquote, dd, dt, td, th, h1, h2, h3, h4, h5, h6, div, section, body",
-  );
-  if (!el) return null;
-  const text = el.textContent ?? "";
-  let at = 0;
-  try {
-    const r = el.ownerDocument.createRange();
-    r.setStart(el, 0);
-    r.setEnd(range.startContainer, range.startOffset);
-    at = r.toString().length;
-  } catch {
-    at = text.indexOf(range.toString());
-  }
-  const len = range.toString().length;
+/** The sentence in `text` around the words at `at` (`len` long), at most about 260 characters. */
+export function sentenceIn(text: string, at: number, len: number): string | null {
   if (at < 0) return null;
   // a sentence ends at . ! ? … (and a closing quote) followed by a space
   const ends = /[.!?…]+["'”’)\]]*\s/g;
@@ -188,4 +169,27 @@ export function sentenceAround(range: Range): string | null {
     s = `${a > 0 ? "…" : ""}${s.slice(a, b).replace(/^\S*\s/, a > 0 ? "" : "$&").trim()}${b < s.length ? "…" : ""}`;
   }
   return s;
+}
+
+/**
+ * The sentence a word sits in, from the page: the block the words are in, cut at sentence ends
+ * around them, at most about 260 characters. Returns null when there's no text around.
+ */
+export function sentenceAround(range: Range): string | null {
+  const start = range.startContainer;
+  const el = (start.nodeType === Node.ELEMENT_NODE ? (start as Element) : start.parentElement)?.closest(
+    "p, li, blockquote, dd, dt, td, th, h1, h2, h3, h4, h5, h6, div, section, body",
+  );
+  if (!el) return null;
+  const text = el.textContent ?? "";
+  let at = 0;
+  try {
+    const r = el.ownerDocument.createRange();
+    r.setStart(el, 0);
+    r.setEnd(range.startContainer, range.startOffset);
+    at = r.toString().length;
+  } catch {
+    at = text.indexOf(range.toString());
+  }
+  return sentenceIn(text, at, range.toString().length);
 }

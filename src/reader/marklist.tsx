@@ -21,8 +21,18 @@ const chapterOf = (m: Mark) => (m.kind === "hl" ? m.h.chapter : m.b.chapter)?.tr
 const noteOf = (m: Mark) => (m.kind === "hl" ? m.h.note : m.b.note);
 const keyOf = (m: Mark) => `${m.kind}${m.kind === "hl" ? m.h.id : m.b.id}`;
 
-/** Reading order: by place in the book (CFI), how far through when two CFIs can't be compared. */
+/** A page book's place (`page:12` or `page:12:340-388`) as one number, in reading order. */
+const pageKey = (cfi: string) => {
+  const m = /^page:(\d+)(?::(\d+)-\d+)?$/.exec(cfi);
+  return m ? Number(m[1]) * 1e7 + Number(m[2] ?? 0) : null;
+};
+
+/** Reading order: by place in the book (CFI, or page and words), how far through when two can't be compared. */
 export function byPlace(a: { cfi: string; frac: number | null }, b: { cfi: string; frac: number | null }) {
+  const pa = pageKey(a.cfi);
+  const pb = pageKey(b.cfi);
+  if (pa != null && pb != null) return pa - pb || (a.frac ?? 0) - (b.frac ?? 0);
+  if (pa != null || pb != null) return (a.frac ?? 0) - (b.frac ?? 0);
   try {
     const c = cfiCompare(a.cfi, b.cfi);
     if (c !== 0) return c;

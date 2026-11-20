@@ -12,6 +12,9 @@ import { BookmarksPage } from "./pages/BookmarksPage";
 import { WordsPage } from "./pages/WordsPage";
 import { GrimmoryPage } from "./pages/GrimmoryPage";
 import { Reader } from "./reader/Reader";
+import { PageReader } from "./reader/PageReader";
+import { PAGE_FORMATS } from "./reader/pagesrc";
+import { startPdfCovers } from "./lib/pdfcovers";
 
 const win = getCurrentWindow();
 
@@ -48,6 +51,9 @@ export function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [drawer, setDrawer] = useState(false);
   useTheme();
+
+  // PDF covers, drawn from their first pages in the background
+  useEffect(() => startPdfCovers(), []);
 
   // the library, kept fresh by the folder scanner
   useEffect(() => {
@@ -168,7 +174,11 @@ export function App() {
   return (
     <div className="app">
       {reading ? (
-        <Reader key={reading.id} book={reading} onClose={s.closeReader} startAt={s.openAt} />
+        PAGE_FORMATS.has(reading.format) ? (
+          <PageReader key={reading.id} book={reading} onClose={s.closeReader} startAt={s.openAt} />
+        ) : (
+          <Reader key={reading.id} book={reading} onClose={s.closeReader} startAt={s.openAt} />
+        )
       ) : (
         <>
           <TitleBar

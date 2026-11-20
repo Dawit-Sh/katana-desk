@@ -5,8 +5,8 @@
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "node tools/copy-pdfjs.mjs && vite",
+    "build": "node tools/copy-pdfjs.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -20,6 +20,7 @@
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "foliate-js": "github:johnfactotum/foliate-js#78914aef4466eb960965702401634c2cb348e9b1",
     "material-symbols": "^0.49.0",
+    "pdfjs-dist": "^5.7.284",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.1.0"

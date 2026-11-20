@@ -158,3 +158,6 @@ export const useStore = create<State>((set, get) => ({
   },
   setDropping: (dropping) => set({ dropping }),
 }));
+
+// dev builds only: lets test runs over the debug port open a book by id
+if (import.meta.env.DEV) (window as unknown as { __katana: unknown }).__katana = { open: (id: number, at?: string | null) => useStore.getState().open(id, at ?? null) };

@@ -123,7 +123,7 @@ export const fileUrl = (path: string) => convertFileSrc(path);
 export const gcoverUrl = (id: number, v: number | null) => convertFileSrc(`${id}-${v ?? 0}`, "kcover");
 
 /** Grimmory's file types that the reader opens in this version. */
-export const G_READABLE = new Set(["EPUB", "MOBI", "AZW3", "AZW", "FB2", "CBX", "CBZ"]);
+export const G_READABLE = new Set(["EPUB", "MOBI", "AZW3", "AZW", "FB2", "CBX", "CBZ", "CBR", "PDF"]);
 export const gFormat = (b: { fileType: string | null; fileName: string | null }) => {
   if (b.fileType === "AUDIOBOOK") return "Audiobook";
   const ext = b.fileName?.split(".").pop()?.toUpperCase();
@@ -134,6 +134,6 @@ export const gReadable = (b: { fileType: string | null; fileName: string | null 
   G_READABLE.has((b.fileType ?? "").toUpperCase()) && gFormat(b) !== "CBR" && gFormat(b) !== "CB7";
 
 /** Formats the reader opens in this version (foliate-js). PDF and DjVu come in milestone 6. */
-export const READABLE = new Set(["epub", "mobi", "azw3", "azw", "fb2", "fbz", "cbz"]);
+export const READABLE = new Set(["epub", "mobi", "azw3", "azw", "fb2", "fbz", "cbz", "cbr", "pdf", "djvu"]);
 
-export const BOOK_EXTENSIONS = ["epub", "mobi", "azw3", "azw", "fb2", "fbz", "zip", "cbz", "pdf", "djvu", "djv"];
+export const BOOK_EXTENSIONS = ["epub", "mobi", "azw3", "azw", "fb2", "fbz", "zip", "cbz", "cbr", "pdf", "djvu", "djv"];

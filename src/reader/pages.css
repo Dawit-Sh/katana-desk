@@ -1,0 +1,107 @@
+/* The page view (milestone 6): PDF, DjVu and comics. Looks from the design canvas's PDF and comic boards.
+   Shape rule: rounded inside rounded takes the box radius minus the gap (picture groups 12 with 4: 8). */
+
+.rd.pvr { background: var(--k-canvas) }
+.pv { position: absolute; inset: 0; overflow: auto; outline: none }
+.pv::-webkit-scrollbar { width: 12px; height: 12px }
+.pv::-webkit-scrollbar-button { display: none }
+.pv::-webkit-scrollbar-track { background: transparent }
+.pv::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--k-on) 22%, transparent); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box }
+.pv::-webkit-scrollbar-corner { background: transparent }
+.pv-inner { position: relative }
+.pv-row { position: absolute; left: 0; display: flex; justify-content: center; gap: 16px }
+.pv-one { display: flex; align-items: center; justify-content: center; padding: 60px 16px 72px; box-sizing: border-box }
+.pv-spread { display: flex; gap: 16px; align-items: center }
+.pv-spread.rtl { flex-direction: row-reverse }
+.pv.m-two .pv-spread { gap: 0 }
+
+/* a page: the picture, its words (invisible, for selecting), highlights and matches, pins, the corner */
+.pg { position: relative; flex: none; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, .3) }
+.pvr .pv.m-two .pv-spread .pg + .pg { box-shadow: 0 2px 10px rgba(0, 0, 0, .3), inset 1px 0 0 rgba(0, 0, 0, .08) }
+.pgimg, .pgimg .pgpic { position: absolute; inset: 0; width: 100%; height: 100% }
+.pgimg .pgpic { display: block; user-select: none; -webkit-user-drag: none }
+.pgfail { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; color: #666; font-size: 13px }
+.pgfail .ms { font-size: 32px }
+
+.ptl { position: absolute; inset: 0; overflow: hidden; line-height: 1; z-index: 2; user-select: text; -webkit-user-select: text }
+.ptl span { position: absolute; white-space: pre; user-select: text; -webkit-user-select: text; color: transparent; transform-origin: 0 0; font-family: sans-serif; cursor: text }
+.ptl ::selection { background: color-mix(in srgb, var(--k-tint) 38%, transparent); color: transparent }
+.pv.pen .ptl span { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24'><path d='M3 21h7l-2-2H3z' fill='%23e8a33a'/><path d='m18.4 3.6 2 2a1.4 1.4 0 0 1 0 2L11 17l-4-4 9.4-9.4a1.4 1.4 0 0 1 2 0z' fill='%23333' stroke='white' stroke-width='1'/></svg>") 2 20, text }
+
+.hl-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1 }
+.hl-layer i { position: absolute; display: block }
+.hlbox.highlight { background: var(--c); opacity: .42; mix-blend-mode: multiply; border-radius: 2px }
+.hlbox.underline { border-bottom: 2px solid var(--c) }
+.hlbox.strikethrough { background: linear-gradient(transparent calc(55% - 1px), var(--c) calc(55% - 1px), var(--c) calc(55% + 1px), transparent calc(55% + 1px)) }
+.hlbox.squiggly {
+  background: linear-gradient(135deg, transparent 45%, var(--c) 45%, var(--c) 55%, transparent 55%) 0 100% / 6px 4px repeat-x,
+    linear-gradient(45deg, transparent 45%, var(--c) 45%, var(--c) 55%, transparent 55%) 3px 100% / 6px 4px repeat-x;
+}
+.hitbox { background: rgba(242, 194, 48, .38); mix-blend-mode: multiply; border-radius: 2px }
+.hitbox.on { background: rgba(239, 138, 47, .45); outline: 2px solid rgba(239, 138, 47, .85); outline-offset: 1px }
+
+/* a note pinned on the page, at the end of its highlight */
+.pg .pin { position: absolute; z-index: 3; width: 24px; height: 24px; border-radius: 8px 8px 8px 2px; background: var(--c, #f2c230); display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); color: #2a2200 }
+.pg .pin .ms { font-size: 16px; color: #2a2200 }
+.pg .pin:hover { transform: scale(1.08) }
+
+/* the corner of each page: click to bookmark it; the ribbon hangs on marked pages */
+.pcorner { position: absolute; top: 0; right: 10px; width: 40px; height: 48px; z-index: 3; cursor: pointer }
+.pcorner .ribbon { position: absolute; left: 8px; top: 0; width: 22px; height: 40px; background: #e8a33a; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); opacity: 0; transition: opacity .15s; pointer-events: none }
+.pcorner:hover .ribbon { opacity: .35 }
+.pcorner.on .ribbon { opacity: 1 }
+.pcorner:focus-visible { outline: none }
+.pcorner:focus-visible .ribbon { opacity: .6 }
+
+/* the top bar: the title at the left, then zoom and the pictures for fit and page mode */
+.pvbar { gap: 4px; padding-right: 0 }
+.pvbar .pvt { min-width: 0; max-width: 26%; margin-left: 6px; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none }
+.pvbar .pvt b { font-weight: 600 }
+.pvbar .zoom { display: flex; align-items: center; gap: 0; background: var(--k-sc); border-radius: 12px; padding: 3px 4px; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; flex: none }
+.pvbar .zoom button { width: 30px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--k-var) }
+.pvbar .zoom button:hover { background: var(--k-schh); color: var(--k-on) }
+.pvbar .zoom .ms { font-size: 19px }
+.pvbar .zoom span { min-width: 44px; text-align: center }
+.pics { display: flex; gap: 2px; background: var(--k-sc); border-radius: 12px; padding: 4px; flex: none; margin-left: 6px }
+.pic { width: 40px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--k-var) }
+.pic:hover { background: var(--k-schh); color: var(--k-on) }
+.pic.on, .pic.on:hover { background: var(--k-pric); color: var(--k-onpric) }
+.pic .ms { font-size: 18px }
+.frm { width: 24px; height: 18px; border: 1.5px solid currentColor; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 2px; overflow: hidden }
+.frm i { display: block; background: currentColor; opacity: .55; border-radius: 1px }
+.frm .w { width: 100%; height: 150% }
+.frm .p { width: 8px; height: 12px }
+.frm .s { width: 9px; height: 150%; margin-top: 6px; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent) }
+@media (max-width: 1100px) {
+  .pvbar .pvt { display: none }
+}
+@media (max-width: 900px) {
+  .pvbar .zoom span { display: none }
+}
+
+/* find: one bar over the page, every match marked, a counter */
+.findbar { position: absolute; top: 60px; transform: translateX(-50%); height: 44px; border-radius: 22px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 14px; z-index: 6; box-shadow: 0 6px 20px var(--k-shadow); font-size: 13px; font-variant-numeric: tabular-nums; width: min(460px, calc(100% - 32px)); transition: left .2s }
+.findbar > .ms { font-size: 19px; color: var(--k-var) }
+.findbar input { flex: 1; min-width: 0; height: 100%; color: var(--k-on); font-size: 14px; padding: 0 6px; user-select: text }
+.findbar input::placeholder { color: var(--k-var) }
+.findbar .dim { color: var(--k-var); white-space: nowrap; display: flex; align-items: center; gap: 8px; padding-right: 4px }
+.findbar button { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--k-var) }
+.findbar button:hover:not(:disabled) { background: var(--k-cap-hover); color: var(--k-on) }
+.findbar button:disabled { opacity: .35 }
+.findbar button .ms { font-size: 20px }
+
+/* the side panel's tabs, and the Pages tab */
+.sidetabs { flex-wrap: nowrap }
+.pthumbs { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0 -8px; padding: 4px 8px 8px }
+.pthumbs::-webkit-scrollbar { width: 10px }
+.pthumbs::-webkit-scrollbar-thumb { background: var(--k-schh); border-radius: 5px; border: 3px solid transparent; background-clip: padding-box }
+.pthumbs::-webkit-scrollbar-button { display: none }
+.pth { position: relative; display: grid; justify-items: center; gap: 6px; padding: 8px 10px; border-radius: 16px; width: 100%; font-size: 11.5px; color: var(--k-var); font-variant-numeric: tabular-nums }
+.pth:hover { background: var(--k-cap-hover) }
+.pth-img { display: block; position: relative; background: #fbfbf8; border-radius: 2px; box-shadow: 0 1px 4px rgba(0, 0, 0, .3); overflow: hidden }
+.pth-img .pgpic { position: absolute; inset: 0; width: 100%; height: 100%; display: block }
+.pth.on .pth-img { outline: 3px solid var(--k-pri); outline-offset: 2px }
+.pth.on small { color: var(--k-on); font-weight: 600 }
+.pth-rib { position: absolute; top: 8px; right: calc(50% - 58px); width: 14px; height: 24px; background: #e8a33a; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%) }
+.slider.rtl { transform: scaleX(-1) }
+.slider.rtl .sl-tip { transform: translateX(-50%) scaleX(-1) }

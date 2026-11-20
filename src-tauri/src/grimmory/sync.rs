@@ -36,10 +36,20 @@ struct Linked {
     href: Option<String>,
 }
 
-/// Formats whose CFIs mean the same in Grimmory's web reader (foliate-js on both sides). MOBI, AZW3
-/// and FB2 go by how far through, as on Android, so a place from any device can be used.
+/// Formats whose exact place means the same in Grimmory's web reader: an EPUB's CFI (foliate-js on both
+/// sides), a PDF's or a comic's page (kept in the `cfi` slot as the page number, from 1). MOBI, AZW3 and
+/// FB2 go by how far through, as on Android, so a place from any device can be used.
 fn uses_cfi(format: &str) -> bool {
-    format == "epub"
+    format == "epub" || by_page(format)
+}
+
+/// PDFs and comics: Grimmory keeps their place as a page (from 1).
+pub fn by_page(format: &str) -> bool {
+    matches!(format, "pdf" | "cbz" | "cbr")
+}
+
+fn is_comic(format: &str) -> bool {
+    matches!(format, "cbz" | "cbr")
 }
 
 fn linked(app: &AppHandle, id: i64) -> Option<Linked> {
@@ -87,7 +97,7 @@ pub async fn server_place(app: &AppHandle, gid: i64, format: &str, timeout: Opti
 /// there's no reader place, or when a real KOReader device wrote it last (its sync time is the book's
 /// last read time).
 pub fn place_from(v: &serde_json::Value, format: &str, now: i64) -> Option<ServerPlace> {
-    let key = if format == "cbz" { "cbxProgress" } else if format == "pdf" { "pdfProgress" } else { "epubProgress" };
+    let key = if is_comic(format) { "cbxProgress" } else if format == "pdf" { "pdfProgress" } else { "epubProgress" };
     let p = v.get(key).filter(|x| x.is_object());
     let last = v.get("lastReadTime").and_then(parse_time);
     if let Some(ko) = v.get("koreaderProgress").filter(|x| x.is_object()) {
@@ -115,14 +125,17 @@ pub fn place_from(v: &serde_json::Value, format: &str, now: i64) -> Option<Serve
         }
     }
     let pct = p.and_then(|p| p.get("percentage")).and_then(|x| x.as_f64()).map(|x| (x / 100.0).clamp(0.0, 1.0));
-    let cfi = p
-        .and_then(|p| p.get("cfi"))
-        .and_then(|x| x.as_str())
-        .map(|x| x.trim().to_string())
-        .filter(|x| !x.is_empty() && x != "0" && x.starts_with("epubcfi("))
-        .filter(|_| uses_cfi(format));
+    let page = p.and_then(|p| p.get("page")).and_then(|x| x.as_i64()).filter(|n| *n >= 1);
+    let cfi = if by_page(format) {
+        page.map(|n| n.to_string())
+    } else {
+        p.and_then(|p| p.get("cfi"))
+            .and_then(|x| x.as_str())
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty() && x != "0" && x.starts_with("epubcfi("))
+            .filter(|_| uses_cfi(format))
+    };
     let href = p.and_then(|p| p.get("href")).and_then(|x| x.as_str()).map(String::from);
-    let page = p.and_then(|p| p.get("page")).and_then(|x| x.as_i64());
     if cfi.is_none() && pct.unwrap_or(0.0) <= 0.0 && page.is_none() {
         return None;
     }
@@ -141,6 +154,25 @@ pub fn place_from(v: &serde_json::Value, format: &str, now: i64) -> Option<Serve
 mod tests {
     use super::place_from;
     use serde_json::json;
+
+    #[test]
+    fn pdf_and_comic_places_are_pages() {
+        // Aborting the Human Race and Dio on his Grimmory, after a page turn from this PC
+        let now = 1_795_182_400_000;
+        let v = json!({"readProgress":0.692,"lastReadTime":"2026-11-20T13:46:31Z",
+            "pdfProgress":{"page":9,"percentage":69.2,"updatedAt":"2026-11-20T13:46:31Z"},
+            "koreaderProgress":{"percentage":0.692,"device":"Grimmory","deviceId":"Grimmory","lastSyncTime":"2026-11-20T13:46:31Z"}});
+        let p = place_from(&v, "pdf", now).unwrap();
+        assert_eq!((p.cfi.as_deref(), p.page), (Some("9"), Some(9)));
+        assert!((p.fraction.unwrap() - 0.692).abs() < 1e-6);
+        let v = json!({"cbxProgress":{"page":6,"percentage":5.0,"updatedAt":"2026-11-20T13:48:45Z"}});
+        assert_eq!(place_from(&v, "cbr", now).unwrap().cfi.as_deref(), Some("6"));
+        // an EPUB's place on a PDF is left alone; a page is never read as a CFI
+        let v = json!({"epubProgress":{"cfi":"epubcfi(/6/4!/4/2/1:0)","percentage":10.0}});
+        assert_eq!(place_from(&v, "pdf", now), None);
+        let v = json!({"epubProgress":{"cfi":"epubcfi(/6/4!/4/2/1:0)","percentage":10.0}});
+        assert_eq!(place_from(&v, "epub", now).unwrap().cfi.as_deref(), Some("epubcfi(/6/4!/4/2/1:0)"));
+    }
 
     #[test]
     fn koreader_place_wins_when_it_was_written_last() {
@@ -189,7 +221,9 @@ fn seen_json(s: &Seen) -> String {
 /// Takes Grimmory's place here. `use_cfi`: its CFI; otherwise how far through (the reader goes there).
 fn apply(app: &AppHandle, id: i64, p: &ServerPlace, use_cfi: bool) {
     let conn = conn_of(app);
-    let location = if use_cfi { p.cfi.clone() } else { None };
+    // a page (PDFs, comics) is always exact; a CFI only when it's fresh
+    let page = p.cfi.as_deref().map_or(false, |c| c.parse::<i64>().is_ok());
+    let location = if use_cfi || page { p.cfi.clone() } else { None };
     let _ = conn.execute(
         "UPDATE books SET location = ?2, fraction = ?3, place_state = 'clean', server_place = ?4, synced_at = ?5,
             place_at = ?5 WHERE id = ?1",
@@ -209,20 +243,26 @@ fn note_seen(app: &AppHandle, id: i64, p: Option<&ServerPlace>) {
 async fn post(app: &AppHandle, id: i64, l: &Linked) -> GRes<()> {
     let file_id: Option<i64> = conn_of(app).query_row("SELECT file_id FROM gbooks WHERE id = ?1", [l.gid], |r| r.get(0)).optional().ok().flatten().flatten();
     let pct = (l.local.fraction.unwrap_or(0.0).clamp(0.0, 1.0) * 100.0) as f32;
-    let comic = l.format == "cbz";
-    // comics: Grimmory keeps the page (1-based); the reader keeps how far through
-    let page = comic.then(|| {
-        let total: Option<i64> = conn_of(app).query_row("SELECT page_count FROM gbooks WHERE id = ?1", [l.gid], |r| r.get(0)).ok().flatten();
-        total.map(|t| ((l.local.fraction.unwrap_or(0.0) * t as f64).floor() as i64 + 1).clamp(1, t.max(1)))
-    }).flatten();
-    let position = if comic { page.map(|p| p.to_string()) } else { l.local.cfi.clone() };
-    let href = if comic { None } else { l.href.clone() };
+    let paged = by_page(&l.format);
+    // PDFs and comics: Grimmory keeps the page (from 1). The page view saves it as the place; an older
+    // place (a comic read in foliate-js) goes by how far through.
+    let page = paged
+        .then(|| {
+            l.local.cfi.as_deref().and_then(|c| c.parse::<i64>().ok()).filter(|n| *n >= 1).or_else(|| {
+                let total: Option<i64> = conn_of(app).query_row("SELECT page_count FROM gbooks WHERE id = ?1", [l.gid], |r| r.get(0)).ok().flatten();
+                total.map(|t| ((l.local.fraction.unwrap_or(0.0) * t as f64).ceil() as i64).clamp(1, t.max(1)))
+            })
+        })
+        .flatten();
+    let position = if paged { page.map(|p| p.to_string()) } else { l.local.cfi.clone() };
+    let href = if paged { None } else { l.href.clone() };
     let body = match file_id {
         Some(fid) => serde_json::json!({
             "bookId": l.gid,
             "fileProgress": { "bookFileId": fid, "positionData": position, "positionHref": href, "progressPercent": pct }
         }),
-        None if comic => serde_json::json!({ "bookId": l.gid, "cbxProgress": { "page": page, "percentage": pct } }),
+        None if is_comic(&l.format) => serde_json::json!({ "bookId": l.gid, "cbxProgress": { "page": page, "percentage": pct } }),
+        None if paged => serde_json::json!({ "bookId": l.gid, "pdfProgress": { "page": page, "percentage": pct } }),
         None => serde_json::json!({ "bookId": l.gid, "epubProgress": { "cfi": position, "href": href, "percentage": pct } }),
     };
     let resp = send(app, move |c, base, tok| c.post(format!("{base}/api/v1/books/progress")).bearer_auth(tok).json(&body)).await?;
@@ -232,7 +272,7 @@ async fn post(app: &AppHandle, id: i64, l: &Linked) -> GRes<()> {
         return Err(GErr::Server(st, super::server_message(&text)));
     }
     let sent = ServerPlace {
-        cfi: if uses_cfi(&l.format) { l.local.cfi.clone() } else { None },
+        cfi: if paged { position.clone() } else if uses_cfi(&l.format) { l.local.cfi.clone() } else { None },
         fraction: Some(pct as f64 / 100.0),
         ..Default::default()
     };

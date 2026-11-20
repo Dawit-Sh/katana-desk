@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 pub struct Db(pub Mutex<Connection>);
 
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -210,6 +210,10 @@ impl Db {
         if version < 5 {
             // My words, their review and the learning numbers (milestone 5), additive only
             conn.execute_batch(crate::words::SCHEMA_V5)?;
+        }
+        if version < 6 {
+            // PDFs get their covers from PDF.js in the page, once (milestone 6), additive only
+            conn.execute_batch("ALTER TABLE books ADD COLUMN cover_tried INTEGER NOT NULL DEFAULT 0;")?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))

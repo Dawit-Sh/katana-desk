@@ -53,7 +53,10 @@ pub struct RemoteHl {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RemoteBm {
     pub id: i64,
+    /// an EPUB's CFI; for PDFs and comics the page as this PC keys it (`page:12`), see [`keyed`]
     pub cfi: Option<String>,
+    /// a PDF bookmark's page (from 1), as Grimmory keeps it
+    pub page_number: Option<i64>,
     pub title: Option<String>,
     pub notes: Option<String>,
     pub created: Option<String>,
@@ -241,8 +244,11 @@ fn without_assertions(cfi: &str) -> String {
     out
 }
 
-/// "start;end", each the full path; None for what isn't a CFI.
+/// "start;end", each the full path; a page place (`page:12`) as it is; None for what isn't a CFI.
 fn place_key(cfi: &str) -> Option<String> {
+    if cfi.starts_with("page:") {
+        return Some(cfi.to_string());
+    }
     let inner = cfi.trim().strip_prefix("epubcfi(")?.strip_suffix(')')?;
     let s = without_assertions(inner);
     let parts: Vec<&str> = s.split(',').collect();
@@ -433,15 +439,60 @@ fn same_highlight(l: &LocalHl, s: &RemoteHl) -> bool {
 fn server_name(s: &RemoteBm, l: Option<&LocalBm>) -> Option<String> {
     let t = norm(s.title.as_deref())?;
     if let Some(l) = l {
-        if l.seen.as_ref().and_then(|x| x.auto.as_deref()) == Some(t.as_str()) || norm(l.chapter.as_deref()).as_deref() == Some(t.as_str()) {
+        let page_name = page_of(&l.cfi).is_some() && auto_name(l) == t;
+        if l.seen.as_ref().and_then(|x| x.auto.as_deref()) == Some(t.as_str()) || norm(l.chapter.as_deref()).as_deref() == Some(t.as_str()) || page_name {
             return None;
         }
     }
     Some(t)
 }
 
+/// What kind of book's marks sync: an EPUB's (highlights and bookmarks, places by CFI), or a PDF's or a
+/// comic's (bookmarks by page: a PDF's in `pageNumber`, a comic's page written in `cfi`, as Grimmory's
+/// own readers keep them).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Kind {
+    Epub,
+    Pdf,
+    Comic,
+}
+
+impl Kind {
+    pub fn of(format: &str) -> Option<Kind> {
+        match format {
+            "epub" => Some(Kind::Epub),
+            "pdf" => Some(Kind::Pdf),
+            "cbz" | "cbr" => Some(Kind::Comic),
+            _ => None,
+        }
+    }
+}
+
+/// Grimmory's bookmarks of the kind this book keeps, with their place as this PC keys it; a place of the
+/// other kind (a CFI on a PDF, a page on an EPUB) is left alone on the server.
+pub fn keyed(kind: Kind, remote: Vec<RemoteBm>) -> Vec<RemoteBm> {
+    remote
+        .into_iter()
+        .filter_map(|mut r| {
+            let place = match kind {
+                Kind::Epub => r.cfi.clone().filter(|c| c.starts_with("epubcfi(")),
+                Kind::Pdf => r.page_number.filter(|n| *n >= 1).map(|n| format!("page:{n}")),
+                Kind::Comic => r.cfi.as_deref().and_then(|c| c.trim().parse::<i64>().ok()).filter(|n| *n >= 1).map(|n| format!("page:{n}")),
+            }?;
+            r.cfi = Some(place);
+            Some(r)
+        })
+        .collect()
+}
+
+/// A page place's page (from 1).
+fn page_of(cfi: &str) -> Option<i64> {
+    cfi.strip_prefix("page:")?.split(':').next()?.parse().ok()
+}
+
 pub fn plan_bookmarks(local: &[LocalBm], remote: &[RemoteBm], clock: &Clock) -> Plan<RemoteBm> {
-    let remote: Vec<&RemoteBm> = remote.iter().filter(|r| r.cfi.as_deref().map_or(false, |c| c.starts_with("epubcfi("))).collect();
+    let remote: Vec<&RemoteBm> =
+        remote.iter().filter(|r| r.cfi.as_deref().map_or(false, |c| c.starts_with("epubcfi(") || c.starts_with("page:"))).collect();
     let remote_ids: HashSet<i64> = remote.iter().map(|r| r.id).collect();
     let by_remote: HashMap<i64, &LocalBm> = local.iter().filter_map(|l| l.remote_id.map(|r| (r, l))).collect();
     let mut used: HashSet<i64> = HashSet::new();
@@ -556,6 +607,7 @@ pub fn remote_bm(v: &Value) -> Option<RemoteBm> {
     Some(RemoteBm {
         id: v.get("id")?.as_i64()?,
         cfi: s(v, "cfi").filter(|x| !x.trim().is_empty()),
+        page_number: v.get("pageNumber").and_then(|x| x.as_i64()),
         title: norm(s(v, "title").as_deref()),
         notes: norm(s(v, "notes").as_deref()),
         created: s(v, "createdAt"),
@@ -642,14 +694,19 @@ fn held() -> &'static Mutex<HashMap<i64, (Vec<i64>, Vec<i64>)>> {
     H.get_or_init(Default::default)
 }
 
-/// The Grimmory book a book on this PC is, when its marks sync (EPUBs only).
-pub fn synced_gid(app: &AppHandle, book_id: i64) -> Option<i64> {
+/// The Grimmory book a book on this PC is, and what of its marks sync: an EPUB's highlights and
+/// bookmarks, a PDF's or a comic's bookmarks.
+pub fn synced_kind(app: &AppHandle, book_id: i64) -> Option<(i64, Kind)> {
     conn_of(app)
         .query_row("SELECT grimmory_id, format FROM books WHERE id = ?1 AND missing = 0", [book_id], |r| {
             Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, String>(1)?))
         })
         .ok()
-        .and_then(|(gid, f)| gid.filter(|_| f == "epub"))
+        .and_then(|(gid, f)| Some((gid?, Kind::of(&f)?)))
+}
+
+pub fn synced_gid(app: &AppHandle, book_id: i64) -> Option<i64> {
+    synced_kind(app, book_id).map(|x| x.0)
 }
 
 fn local_hls(app: &AppHandle, book_id: i64) -> Vec<LocalHl> {
@@ -709,14 +766,18 @@ fn js<T: Serialize>(t: &T) -> String {
     serde_json::to_string(t).unwrap_or_default()
 }
 
-/// The name a bookmark goes up with when it has none here: its chapter, as the web reader names its own.
+/// The name a bookmark goes up with when it has none here, as the web reader names its own: an EPUB's
+/// its chapter, a page's "Page 12".
 fn auto_name(l: &LocalBm) -> String {
+    if let Some(n) = page_of(&l.cfi) {
+        return format!("Page {n}");
+    }
     norm(l.chapter.as_deref()).unwrap_or_else(|| "Bookmark".into())
 }
 
 /// Syncs one book's highlights and bookmarks. Returns whether anything here changed.
 pub async fn sync_book(app: &AppHandle, book_id: i64) -> GRes<bool> {
-    let Some(gid) = synced_gid(app, book_id) else { return Ok(false) };
+    let Some((gid, kind)) = synced_kind(app, book_id) else { return Ok(false) };
     if !g(app).signed_in() {
         return Err(GErr::SignedOut);
     }
@@ -724,7 +785,7 @@ pub async fn sync_book(app: &AppHandle, book_id: i64) -> GRes<bool> {
     let mut changed = false;
     // a second round settles what the first one learned (a 409 to match by place, a mark gone on the server)
     for _ in 0..2 {
-        let (c, again) = round(app, book_id, gid).await?;
+        let (c, again) = round(app, book_id, gid, kind).await?;
         changed |= c;
         if !again {
             break;
@@ -736,12 +797,21 @@ pub async fn sync_book(app: &AppHandle, book_id: i64) -> GRes<bool> {
     Ok(changed)
 }
 
-async fn round(app: &AppHandle, book_id: i64, gid: i64) -> GRes<(bool, bool)> {
+async fn round(app: &AppHandle, book_id: i64, gid: i64, kind: Kind) -> GRes<(bool, bool)> {
     let clock = clock(app).await;
-    let hls: Vec<RemoteHl> = get_list(app, format!("/api/v1/annotations/book/{gid}")).await?.iter().filter_map(remote_hl).collect();
-    let bms: Vec<RemoteBm> = get_list(app, format!("/api/v1/bookmarks/book/{gid}")).await?.iter().filter_map(remote_bm).collect();
-    let lh = local_hls(app, book_id);
-    let lb = local_bms(app, book_id);
+    // a PDF's and a comic's highlights stay on this PC (Grimmory keeps no page highlights of this shape)
+    let epub = kind == Kind::Epub;
+    let hls: Vec<RemoteHl> = if epub {
+        get_list(app, format!("/api/v1/annotations/book/{gid}")).await?.iter().filter_map(remote_hl).collect()
+    } else {
+        vec![]
+    };
+    let bms: Vec<RemoteBm> = keyed(kind, get_list(app, format!("/api/v1/bookmarks/book/{gid}")).await?.iter().filter_map(remote_bm).collect());
+    let lh = if epub { local_hls(app, book_id) } else { vec![] };
+    let lb: Vec<LocalBm> = local_bms(app, book_id)
+        .into_iter()
+        .filter(|l| if epub { l.cfi.starts_with("epubcfi(") } else { l.cfi.starts_with("page:") })
+        .collect();
     let ph = plan_highlights(&lh, &hls, &clock);
     let pb = plan_bookmarks(&lb, &bms, &clock);
     {
@@ -766,7 +836,7 @@ async fn round(app: &AppHandle, book_id: i64, gid: i64) -> GRes<(bool, bool)> {
         again |= ag;
     }
     for a in pb.acts {
-        let (c, ag) = apply_bm(app, book_id, gid, a, &exp_b, &clock, &lb).await?;
+        let (c, ag) = apply_bm(app, book_id, gid, kind, a, &exp_b, &clock, &lb).await?;
         changed |= c;
         again |= ag;
     }
@@ -936,6 +1006,7 @@ async fn apply_bm(
     app: &AppHandle,
     book_id: i64,
     gid: i64,
+    kind: Kind,
     a: Act<RemoteBm>,
     exp: &HashMap<i64, i64>,
     clock: &Clock,
@@ -1003,15 +1074,19 @@ async fn apply_bm(
             };
             let auto = norm(l.title.as_deref()).is_none().then(|| auto_name(&l));
             let title: String = norm(l.title.as_deref()).or(auto.clone()).unwrap_or_default().chars().take(255).collect();
-            let body = json!({ "bookId": gid, "cfi": l.cfi, "title": title });
+            let body = match (kind, page_of(&l.cfi)) {
+                (Kind::Pdf, Some(n)) => json!({ "bookId": gid, "pageNumber": n, "title": title }),
+                (Kind::Comic, Some(n)) => json!({ "bookId": gid, "cfi": n.to_string(), "title": title }),
+                _ => json!({ "bookId": gid, "cfi": l.cfi, "title": title }),
+            };
             match write(app, reqwest::Method::POST, "/api/v1/bookmarks".into(), body).await? {
                 Write::Saved(v) => {
-                    let Some(mut s) = remote_bm(&v) else { return Ok((false, false)) };
+                    let Some(mut s) = remote_bm(&v).and_then(|s| keyed(kind, vec![s]).pop()) else { return Ok((false, false)) };
                     // Grimmory takes no note when a bookmark is made: it goes in a second request
                     if let Some(n) = norm(l.note.as_deref()) {
                         let body = json!({ "title": title, "notes": n.chars().take(2000).collect::<String>() });
                         if let Write::Saved(v2) = write(app, reqwest::Method::PUT, format!("/api/v1/bookmarks/{}", s.id), body).await? {
-                            if let Some(s2) = remote_bm(&v2) {
+                            if let Some(s2) = remote_bm(&v2).and_then(|s| keyed(kind, vec![s]).pop()) {
                                 s = s2;
                             }
                         }
@@ -1034,7 +1109,7 @@ async fn apply_bm(
             let body = json!({ "title": title, "notes": l.note.clone().unwrap_or_default().chars().take(2000).collect::<String>() });
             match write(app, reqwest::Method::PUT, format!("/api/v1/bookmarks/{remote}"), body).await? {
                 Write::Saved(v) => {
-                    if let Some(s) = remote_bm(&v) {
+                    if let Some(s) = remote_bm(&v).and_then(|s| keyed(kind, vec![s]).pop()) {
                         saved_bm(app, id, l.updated_at, &s, auto);
                     }
                     Ok((false, false))
@@ -1102,8 +1177,8 @@ pub async fn push_all(app: &AppHandle) {
     let ids: Vec<i64> = {
         let conn = conn_of(app);
         let Ok(mut st) = conn.prepare(
-            "SELECT DISTINCT b.id FROM books b WHERE b.grimmory_id IS NOT NULL AND b.format = 'epub' AND b.missing = 0 AND (
-                EXISTS (SELECT 1 FROM highlights h WHERE h.book_id = b.id AND h.sync_state IN ('local', 'dirty', 'deleted'))
+            "SELECT DISTINCT b.id FROM books b WHERE b.grimmory_id IS NOT NULL AND b.format IN ('epub', 'pdf', 'cbz', 'cbr') AND b.missing = 0 AND (
+                (b.format = 'epub' AND EXISTS (SELECT 1 FROM highlights h WHERE h.book_id = b.id AND h.sync_state IN ('local', 'dirty', 'deleted')))
                 OR EXISTS (SELECT 1 FROM bookmarks m WHERE m.book_id = b.id AND m.sync_state IN ('local', 'dirty', 'deleted')))",
         ) else {
             return;
@@ -1157,7 +1232,7 @@ pub async fn after_library_sync(app: &AppHandle) {
         .collect();
     let books: Vec<i64> = {
         let conn = conn_of(app);
-        let Ok(mut st) = conn.prepare("SELECT id, grimmory_id FROM books WHERE grimmory_id IS NOT NULL AND format = 'epub' AND missing = 0") else {
+        let Ok(mut st) = conn.prepare("SELECT id, grimmory_id FROM books WHERE grimmory_id IS NOT NULL AND format IN ('epub', 'pdf', 'cbz', 'cbr') AND missing = 0") else {
             return;
         };
         let rows = st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)));
@@ -1240,11 +1315,12 @@ pub fn marks_sync_state(app: AppHandle, id: i64) -> String {
         let linked: bool = conn_of(&app)
             .query_row("SELECT grimmory_id IS NOT NULL FROM books WHERE id = ?1", [id], |r| r.get(0))
             .unwrap_or(false);
-        return if linked && fmt.as_deref() != Some("epub") { "format".into() } else { "local".into() };
+        return if linked && fmt.as_deref().and_then(Kind::of).is_none() { "format".into() } else { "local".into() };
     }
     let waiting: i64 = conn_of(&app)
         .query_row(
-            "SELECT (SELECT COUNT(*) FROM highlights WHERE book_id = ?1 AND sync_state IN ('local', 'dirty', 'deleted'))
+            "SELECT (SELECT COUNT(*) FROM highlights h JOIN books b ON b.id = h.book_id WHERE h.book_id = ?1 AND b.format = 'epub'
+                        AND h.sync_state IN ('local', 'dirty', 'deleted'))
                   + (SELECT COUNT(*) FROM bookmarks WHERE book_id = ?1 AND sync_state IN ('local', 'dirty', 'deleted'))",
             [id],
             |r| r.get(0),
@@ -1433,7 +1509,7 @@ mod tests {
     }
 
     fn rb(id: i64, cfi: &str, title: Option<&str>) -> RemoteBm {
-        RemoteBm { id, cfi: Some(cfi.into()), title: title.map(String::from), notes: None, created: Some(server_time(-60)), updated: Some(server_time(-60)) }
+        RemoteBm { id, cfi: Some(cfi.into()), page_number: None, title: title.map(String::from), notes: None, created: Some(server_time(-60)), updated: Some(server_time(-60)) }
     }
     fn lb(id: i64, cfi: &str, remote: Option<(&RemoteBm, Option<&str>)>, state: &str) -> LocalBm {
         LocalBm {
@@ -1500,5 +1576,40 @@ mod tests {
         // a PDF page bookmark on the server is left alone
         let pdf = RemoteBm { id: 8, cfi: None, ..Default::default() };
         assert!(plan_bookmarks(&[], &[pdf], &clock()).acts.is_empty());
+    }
+
+    #[test]
+    fn page_bookmarks_key_by_page() {
+        let pdf = RemoteBm { id: 1, page_number: Some(12), ..Default::default() };
+        let comic = RemoteBm { id: 2, cfi: Some("7".into()), ..Default::default() };
+        let epub = RemoteBm { id: 3, cfi: Some(B1.into()), ..Default::default() };
+        let all = vec![pdf.clone(), comic.clone(), epub.clone()];
+        // each kind takes only its own: a PDF's pageNumber, a comic's page in cfi, an EPUB's CFI
+        let k = keyed(Kind::Pdf, all.clone());
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].cfi.as_deref(), Some("page:12"));
+        let k = keyed(Kind::Comic, all.clone());
+        assert_eq!((k.len(), k[0].cfi.as_deref()), (1, Some("page:7")));
+        let k = keyed(Kind::Epub, all);
+        assert_eq!((k.len(), k[0].id), (1, 3));
+        assert_eq!(Kind::of("cbr"), Some(Kind::Comic));
+        assert_eq!(Kind::of("djvu"), None);
+    }
+
+    #[test]
+    fn page_bookmarks_plan_like_epub_ones() {
+        let s = RemoteBm { id: 5, cfi: Some("page:12".into()), title: Some("Page 12".into()), updated: Some(server_time(-60)), ..Default::default() };
+        // the same page made here and on Grimmory: one bookmark, linked
+        let mut l = lb(1, "page:12", None, "local");
+        l.chapter = Some("Chapter 2".into());
+        let p = plan_bookmarks(&[l.clone()], &[s.clone()], &clock());
+        assert!(matches!(p.acts.as_slice(), [Act::InStep { id: 1, .. }]), "{:?}", p.acts);
+        // another page: both stay, each goes to the other side
+        let other = lb(2, "page:30", None, "local");
+        let p = plan_bookmarks(&[other], &[s.clone()], &clock());
+        assert_eq!(p.acts, vec![Act::Insert(s), Act::Create(2)]);
+        // unnamed, it goes up as "Page 30", the way Grimmory's own readers name theirs
+        assert_eq!(auto_name(&lb(2, "page:30", None, "local")), "Page 30");
+        assert_eq!(page_of("page:30:5-9"), Some(30));
     }
 }
