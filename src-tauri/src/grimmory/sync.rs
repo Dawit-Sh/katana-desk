@@ -474,6 +474,27 @@ pub async fn grimmory_answer(app: AppHandle, id: i64, go: bool) -> OpenPlace {
     OpenPlace { location, fraction, offer: None, grimmory_id: gid }
 }
 
+/// While a book is open: a quick look at Grimmory's place for it (every 30 s, and when the window comes
+/// back to the front), so a page read in Grimmory's own reader or on the Fire shows up here. `follow`:
+/// the window just came back, so when nothing was read here since the last sync, the book moves to
+/// Grimmory's newer place by itself (returned, for "Back to p. N"); otherwise it asks, as at the start.
+#[tauri::command]
+pub async fn grimmory_keep_up(app: AppHandle, id: i64, follow: bool) -> Option<OpenPlace> {
+    if !g(&app).signed_in() || *open_book().lock().unwrap() != Some(id) {
+        return None;
+    }
+    let pending = linked(&app, id)?.local.pending;
+    let _ = reconcile(&app, id, Some(Duration::from_secs(6))).await;
+    if !follow || pending {
+        return None;
+    }
+    let p = offers().lock().unwrap().remove(&id)?;
+    let use_cfi = p.cfi.is_some() && linked(&app, id).and_then(|l| l.seen).map_or(true, |s| s.cfi != p.cfi);
+    apply(&app, id, &p, use_cfi);
+    let (location, fraction, gid) = place_of(&app, id);
+    Some(OpenPlace { location, fraction, offer: None, grimmory_id: gid })
+}
+
 /// The book closed: its place goes up now.
 #[tauri::command]
 pub async fn grimmory_closed(app: AppHandle, id: i64) {

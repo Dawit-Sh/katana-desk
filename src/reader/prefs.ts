@@ -20,6 +20,8 @@ export type FontId = "book" | "noto" | "literata" | "source" | "manrope" | "atki
 export type ColourId = "theme" | "paper" | "sepia" | "grey" | "dusk" | "black";
 export type LayoutId = "auto" | "one" | "two" | "scroll";
 export type MarginId = "narrow" | "normal" | "wide";
+/** the text's colour: "auto" = the book's own on light pages, the page's on dark ones; anything else always */
+export type TextId = "auto" | "page" | "white" | "cream" | "amber" | "grey" | "ink";
 
 export type Prefs = {
   font: FontId;
@@ -32,6 +34,9 @@ export type Prefs = {
   /** the book's own styles (its fonts, colours, spacing); off = Katana's plain page */
   bookStyles: boolean;
   colour: ColourId;
+  /** page and text colours swapped */
+  invert: boolean;
+  text: TextId;
   layout: LayoutId;
   footnotes: "popup" | "jump";
 };
@@ -45,6 +50,8 @@ export const BUILT_IN: Prefs = {
   hyphens: true,
   bookStyles: true,
   colour: "theme",
+  invert: false,
+  text: "auto",
   layout: "auto",
   footnotes: "popup",
 };
@@ -122,6 +129,17 @@ export const COLOURS: { id: ColourId; name: string; bg: string; fg: string; dark
   { id: "black", name: "Black", bg: "#000000", fg: "#c9c9c9", dark: true },
 ];
 
+/** Text colours to choose from ("page" = the page colour's own text colour, on every page). */
+export const TEXTS: { id: TextId; name: string; fg?: string }[] = [
+  { id: "auto", name: "Automatic" },
+  { id: "page", name: "The page's" },
+  { id: "white", name: "White", fg: "#f2f0ea" },
+  { id: "cream", name: "Cream", fg: "#e8dcc0" },
+  { id: "amber", name: "Amber", fg: "#f0b860" },
+  { id: "grey", name: "Grey", fg: "#9a9a96" },
+  { id: "ink", name: "Ink", fg: "#14120f" },
+];
+
 export const SPACINGS = [1.4, 1.6, 1.8, 2.0];
 
 /** Margins: how wide a column may be and the gap around it. */
@@ -131,12 +149,18 @@ export const MARGINS: Record<MarginId, { inline: number; gap: number; name: stri
   wide: { inline: 600, gap: 10, name: "Wide" },
 };
 
-/** The page's colours: the chosen page colour, or the app theme's page when "As the theme". */
-export function pageColours(p: Prefs): { bg: string; fg: string; dark: boolean } {
-  const c = COLOURS.find((x) => x.id === p.colour);
-  if (c) return c;
-  const dark = document.documentElement.dataset.tone !== "light";
-  return dark ? COLOURS[3] : COLOURS[0];
+export type PageColours = { bg: string; fg: string; dark: boolean; force: boolean };
+
+/** The page's colours: the chosen page colour (or the app theme's page when "As the theme"), swapped when
+ *  inverted, and the text colour. `force` = the text colour wins over the book's own colours. */
+export function pageColours(p: Prefs): PageColours {
+  let c = COLOURS.find((x) => x.id === p.colour);
+  if (!c) c = document.documentElement.dataset.tone !== "light" ? COLOURS[3] : COLOURS[0];
+  let { bg, fg, dark } = c;
+  if (p.invert) [bg, fg, dark] = [fg, bg, !dark];
+  const t = TEXTS.find((x) => x.id === p.text);
+  if (t?.fg) fg = t.fg;
+  return { bg, fg, dark, force: dark || p.invert || (p.text ?? "auto") !== "auto" };
 }
 
 export function normalise(x: unknown): Prefs {
@@ -144,6 +168,8 @@ export function normalise(x: unknown): Prefs {
   const p = { ...BUILT_IN, ...o };
   if (!FONTS.some((f) => f.id === p.font)) p.font = BUILT_IN.font;
   if (p.colour !== "theme" && !COLOURS.some((c) => c.id === p.colour)) p.colour = "theme";
+  if (!TEXTS.some((t) => t.id === p.text)) p.text = "auto";
+  p.invert = !!p.invert;
   if (!["auto", "one", "two", "scroll"].includes(p.layout)) p.layout = "auto";
   if (!(p.margins in MARGINS)) p.margins = "normal";
   p.size = Math.min(200, Math.max(70, Math.round(Number(p.size) || 100)));
@@ -176,7 +202,7 @@ export const saveBookPrefs = (bookId: number, p: Prefs | null) =>
 export const saveDefaultPrefs = (p: Prefs) => api.setSetting("reader.defaults", JSON.stringify(p));
 
 /** The styles put into the book's pages. */
-export function bookCss(p: Prefs, theme: { fg: string; dark: boolean }) {
+export function bookCss(p: Prefs, theme: { fg: string; dark: boolean; force?: boolean }) {
   const font = FONTS.find((f) => f.id === p.font)!;
   // with the book's own styles off and no font chosen, the page uses Katana's book serif
   const useFont = font.id === "book" && !p.bookStyles ? FONTS[1] : font;
@@ -202,9 +228,10 @@ body :is(p, li, blockquote, dd) { text-align: ${p.align}; }
 body, body * { hyphens: ${hy} !important; -webkit-hyphens: ${hy} !important; }
 a:any-link { color: ${link}; }
 ${
-  theme.dark
-    ? `body :is(p, div, span, li, td, th, dd, dt, blockquote, h1, h2, h3, h4, h5, h6, em, i, b, strong, small, sup, sub, section, article, font) { color: inherit !important; }
-body :is(div, section, article, p, td, th, blockquote, span) { background-color: transparent !important; }`
+  theme.force || theme.dark
+    ? `html, body { color: ${theme.fg} !important; }
+body :is(p, div, span, li, td, th, dd, dt, blockquote, h1, h2, h3, h4, h5, h6, em, i, b, strong, small, sup, sub, section, article, font, center, cite, q, u, s, mark, abbr, label, table, tr, tbody, ul, ol, dl, figcaption) { color: inherit !important; }
+body :is(div, section, article, p, td, th, blockquote, span, table, tr, center) { background-color: transparent !important; }`
     : ""
 }
 ${

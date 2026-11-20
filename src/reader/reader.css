@@ -148,7 +148,8 @@
 .tile .tn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100% }
 .tile:hover { color: var(--k-on) }
 .tile.on { color: var(--k-on); font-weight: 600 }
-.tile.on .mpg, .tile.on .lay, .tile.on .fpic { outline: 2px solid var(--k-tint); outline-offset: 3px }
+.tile.on .mpg, .tile.on .lay, .tile.on .fpic, .tile.on .txc { outline: 2px solid var(--k-tint); outline-offset: 3px }
+.txc { width: 100%; height: 44px; border-radius: 10px; display: grid; place-items: center; font: 600 18px "Noto Serif", Georgia, serif; color: #888; border: 1px solid rgba(127, 127, 127, .3) }
 .mpg { width: 46px; height: 62px; border-radius: 2px 5px 5px 2px; border: 1px solid rgba(127, 127, 127, .35); box-shadow: 0 2px 6px rgba(0, 0, 0, .28); display: flex; flex-direction: column; overflow: hidden }
 .mpg i { display: block; height: 2px; border-radius: 1px; opacity: .6; flex: none }
 .fpic { width: 100%; height: 62px; border-radius: 12px; background: var(--k-page); color: var(--k-ptext); display: grid; place-items: center; font-size: 28px; line-height: 1; position: relative; border: 1px solid rgba(127, 127, 127, .25) }

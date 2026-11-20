@@ -80,7 +80,17 @@ export function App() {
     s.reload();
     const a = listen("library-changed", () => useStore.getState().reload());
     const b = listen<ScanState>("scan-state", (e) => useStore.getState().setScan(e.payload));
-    const c = win.onFocusChanged(({ payload }) => document.documentElement.classList.toggle("blurred", !payload));
+    // back to the front: the window looks awake again, and Grimmory's library catches up (places read
+    // elsewhere meanwhile), at most once a minute
+    let lastLook = Date.now();
+    const c = win.onFocusChanged(({ payload }) => {
+      document.documentElement.classList.toggle("blurred", !payload);
+      const st = useStore.getState();
+      if (payload && !st.bookWindow && st.g?.signedIn && Date.now() - lastLook > 60_000) {
+        lastLook = Date.now();
+        grimmory.sync(false).catch(() => {});
+      }
+    });
     // Grimmory: its state, its library (reloaded at most every 1.5 s while it fills in), its downloads
     const d = listen<GStatus>("grimmory-status", (e) => useStore.getState().setG(e.payload));
     let catTimer = 0;

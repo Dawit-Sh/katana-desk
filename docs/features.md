@@ -132,9 +132,14 @@ The dictionary files are made once by `tools/build-dictionary.py` (see its notes
   after any jump (contents, pages, find, a mark, the slider). Keys: arrows, Space, Page Up/Down, Home, End.
 - The reading place is saved by page. For Grimmory books and Local copies of them, PDF and comic places sync with
   Grimmory by page (`pdfProgress` and `cbxProgress`, pages from 1), and bookmarks sync both ways the way Grimmory's own
-  readers keep them: a PDF's in `pageNumber`, a comic's page in `cfi`, unnamed ones going up as "Page 12". PDF and DjVu
-  highlights stay on this PC (Grimmory's PDF reader keeps its own annotations in another shape). DjVu books come from
-  Local folders only (Grimmory has no DjVu).
+  readers keep them: a PDF's in `pageNumber`, a comic's page in `cfi`, unnamed ones going up as "Page 12". DjVu books
+  come from Local folders only (Grimmory has no DjVu), and their highlights stay on this PC.
+- PDF highlights and drawings sync both ways with Grimmory's own PDF reader (its EmbedPDF annotations, one blob per
+  book): highlights go up with their words' boxes, colour, style and note, and come back as the same highlight; its pen
+  strokes, highlights, text boxes and shapes come down and are drawn over the page. The pen in the top bar draws the
+  same ink (five colours and an eraser, Esc stops). An open book keeps up every 30 s and when the window comes back to
+  the front: back from another reader with nothing read here since, it follows to the newer page, with Back to p. N.
+- Page colours for PDFs, DjVu and comics: as they are, Invert (light on dark), Sepia or Dim, per book.
 - Library covers for PDFs (their first page, drawn by PDF.js in the background, once per book), DjVu books (their
   first page, drawn by DjVuLibre) and CBR comics.
 - DjVuLibre 3.5.28 is compiled into the app from source with the `cc` crate (MSVC on Windows, g++ or clang++ on Linux):

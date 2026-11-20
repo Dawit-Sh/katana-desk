@@ -85,6 +85,21 @@ export const hls = {
   restore: (h: Highlight) => invoke<Highlight>("restore_highlight", { h }),
 };
 
+/** A PDF drawing: Grimmory's pen, a highlight or a text box made in its reader, or Katana's own pen.
+ *  `data` is the annotation as Grimmory's PDF reader (EmbedPDF) keeps it, places in PDF points. */
+export type Annot = { aid: string; page: number; kind: "ink" | "mark" | "other"; data: { annotation: Record<string, any> } };
+
+export const pdfAnnots = {
+  list: (bookId: number) => invoke<Annot[]>("pdf_annots", { bookId }),
+  add: (bookId: number, data: Record<string, unknown>) => invoke<string>("pdf_annot_add", { bookId, data }),
+  remove: (aid: string) => invoke<void>("pdf_annot_remove", { aid }),
+  rects: (id: number, rects: [number, number, number, number][]) => invoke<void>("highlight_rects", { id, rects }),
+  sync: (bookId: number) => invoke<boolean>("pdf_annots_sync", { bookId }),
+};
+
+/** Grimmory's PDF reader colours, for Katana's five (what its pen and highlights use). */
+export const PDF_HEX: Record<Colour, string> = { yellow: "#FFEB3B", green: "#4CAF50", blue: "#2196F3", pink: "#E91E63", orange: "#FF5722" };
+
 export const marksApi = {
   place: (places: MarkPlace[]) => invoke<void>("place_marks", { places }),
   books: () => invoke<MarkedBook[]>("marked_books"),

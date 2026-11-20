@@ -12,6 +12,7 @@ pub mod covers;
 pub mod downloads;
 pub mod marks_sync;
 pub mod matching;
+pub mod pdf_annots;
 pub mod place;
 pub mod sync;
 

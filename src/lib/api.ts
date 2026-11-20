@@ -113,6 +113,8 @@ export const grimmory = {
   openPlace: (id: number) => invoke<OpenPlace>("grimmory_open_place", { id }),
   offer: (id: number) => invoke<Offer | null>("grimmory_offer", { id }),
   answer: (id: number, go: boolean) => invoke<OpenPlace>("grimmory_answer", { id, go }),
+  /** While a book is open: Grimmory's place for it; `follow` moves there when nothing was read here since. */
+  keepUp: (id: number, follow: boolean) => invoke<OpenPlace | null>("grimmory_keep_up", { id, follow }),
   closed: (id: number) => invoke<void>("grimmory_closed", { id }),
   match: (id: number) => invoke<number | null>("grimmory_match", { id }),
 };

@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS list_books (
 );
 ";
 
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -255,6 +255,10 @@ impl Db {
             // the Journal's reading log, finished books, custom covers and lists (milestone 7), additive only
             conn.execute_batch(SCHEMA_V7_LOG)?;
             conn.execute_batch(SCHEMA_V7)?;
+        }
+        if version < 8 {
+            // PDF drawings and Grimmory's copies of PDF annotations; a PDF highlight's word boxes, additive only
+            conn.execute_batch(crate::grimmory::pdf_annots::SCHEMA_V8)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))

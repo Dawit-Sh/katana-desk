@@ -89,9 +89,9 @@ function Bars({ vals, labels, top, titles, height = 70 }: { vals: number[]; labe
   const max = Math.max(1, ...vals);
   return (
     <>
-      <div className="jr-bars" style={{ height }}>
+      <div className="jr-bars" style={{ ["--h" as string]: `${height}px` }}>
         {vals.map((v, i) => (
-          <i key={i} className={i === top && v > 0 ? "top" : v ? "" : "zero"} style={{ height: Math.max(3, Math.round((v / max) * height)) }} title={titles[i]} />
+          <i key={i} className={i === top && v > 0 ? "top" : v ? "" : "zero"} style={{ height: `${Math.max(4, (v / max) * 100)}%` }} title={titles[i]} />
         ))}
       </div>
       <div className={`jr-xl ${labels.length === vals.length ? "even" : ""}`}>{labels.map((l, i) => <span key={i}>{l}</span>)}</div>
@@ -100,12 +100,12 @@ function Bars({ vals, labels, top, titles, height = 70 }: { vals: number[]; labe
 }
 
 /** Little week bars (the last 12 weeks), fading in with how many. */
-function Weeks({ vals, scale }: { vals: number[]; scale: number }) {
+function Weeks({ vals }: { vals: number[]; scale?: number }) {
   const max = Math.max(1, ...vals);
   return (
     <div className="jr-weeks" aria-hidden="true">
       {vals.map((v, i) => (
-        <i key={i} style={{ height: Math.max(3, Math.round((v / max) * scale)), opacity: v ? 0.35 + (0.65 * v) / max : 0.15 }} />
+        <i key={i} style={{ height: `${Math.max(6, (v / max) * 100)}%`, opacity: v ? 0.35 + (0.65 * v) / max : 0.15 }} />
       ))}
     </div>
   );
@@ -293,7 +293,7 @@ export function JournalPage() {
           </div>
           <div>
             <div className="jr-lbl">Pages an hour</div>
-            <svg viewBox="0 0 180 70" width="100%" height="70" aria-hidden="true" className="jr-line">
+            <svg viewBox="0 0 180 70" aria-hidden="true" className="jr-line">
               {pts.length > 1 && <polyline points={line} />}
               {pts.length > 0 && <circle cx={x(pts[pts.length - 1].i)} cy={y(pts[pts.length - 1].v)} r="4" />}
               {!pts.length && <line x1="0" y1="64" x2="180" y2="64" className="none" />}
@@ -369,7 +369,7 @@ export function JournalPage() {
           <div className="jr-lhead"><i className="ms">history</i>When you read</div>
           <div className="jr-hours">
             {j.hours.map((s, h) => (
-              <i key={h} style={{ height: Math.max(3, Math.round((s / hourMax) * 60)), opacity: s ? 0.35 + (0.65 * s) / hourMax : 0.15 }} title={`${hourName(h)}: ${s ? hm(s) : "none"}`} />
+              <i key={h} style={{ height: `${Math.max(5, (s / hourMax) * 100)}%`, opacity: s ? 0.35 + (0.65 * s) / hourMax : 0.15 }} title={`${hourName(h)}: ${s ? hm(s) : "none"}`} />
             ))}
           </div>
           <div className="jr-hlab"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>11 PM</span></div>

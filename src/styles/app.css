@@ -198,9 +198,9 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .acts2 .pill { justify-content: center }
 .acts2 .pill.wide { grid-column: span 2; height: 44px }
 .row2 { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
-.dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; margin: 0 }
-.dl dt { color: var(--k-var) }
-.dl dd { margin: 0; overflow-wrap: anywhere }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; font-size: 13px; margin: 0; align-items: baseline }
+.facts dt { color: var(--k-var); white-space: nowrap }
+.facts dd { margin: 0; overflow-wrap: anywhere; min-width: 0 }
 .menu { position: absolute; background: var(--k-sch); border-radius: 16px; box-shadow: 0 10px 30px var(--k-shadow); padding: 6px; min-width: 200px; z-index: 30; font-size: 13.5px; display: grid }
 .menu button { padding: 8px 12px; display: flex; gap: 12px; align-items: center; border-radius: 10px; width: 100% }
 .menu button:hover { background: var(--k-schh) }
@@ -328,3 +328,11 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .offer.wrap { z-index: 8; width: min(620px, calc(100% - 32px)); border-radius: 28px; padding: 12px 12px 12px 20px; gap: 12px; flex-wrap: wrap }
 .offer.wrap > span:not(.acts2) { white-space: normal; flex: 1 1 360px; line-height: 1.45 }
 .offer.wrap .acts2 { display: flex; gap: 8px; margin-left: auto }
+
+/* the Bookmarks page: one long list of books, each with its marks */
+.scroll.bmlong { gap: 28px; align-items: stretch }
+.bmlong > * { width: 100%; max-width: 1040px }
+.bmtop { display: flex; flex-direction: column; gap: 14px; position: sticky; top: -24px; z-index: 5; background: var(--k-bg); padding: 4px 0 12px; margin-bottom: -12px }
+.bmtop .sfield { width: min(420px, 100%) }
+.bmsec { display: flex; flex-direction: column; gap: 10px; padding-top: 20px; border-top: 1px solid color-mix(in srgb, var(--k-outv) 55%, transparent) }
+.bmtop + .bmsec { border-top: 0; padding-top: 4px }

@@ -170,7 +170,7 @@ export function GBookSheet({ book }: { book: GBook }) {
           <div className="pbar"><i style={{ width: `${d.total ? Math.round((d.done / d.total) * 100) : 0}%` }} /></div>
         </div>
       )}
-      <dl className="dl">
+      <dl className="facts">
         {book.series && (<><dt>Series</dt><dd>{book.series}{book.seriesNumber != null ? ` · ${book.seriesNumber}` : ""}</dd></>)}
         {library && (<><dt>Library</dt><dd>{library}</dd></>)}
         {shelves.length > 0 && (<><dt>Shelves</dt><dd>{shelves.join(", ")}</dd></>)}

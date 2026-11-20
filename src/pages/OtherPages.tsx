@@ -17,15 +17,15 @@ import { AaPanel } from "../reader/AaPanel";
 import { BUILT_IN, loadUiFonts, normalise, saveDefaultPrefs, type Prefs } from "../reader/prefs";
 
 type Section = "general" | "appearance" | "reading" | "sources" | "dictionaries" | "sync" | "keyboard" | "about";
-const SECTIONS: { id: Section; icon: string; name: string }[] = [
-  { id: "general", icon: "tune", name: "General" },
-  { id: "appearance", icon: "palette", name: "Appearance" },
-  { id: "reading", icon: "menu_book", name: "Reading defaults" },
-  { id: "sources", icon: "cloud", name: "Sources" },
-  { id: "dictionaries", icon: "dictionary", name: "Dictionaries" },
-  { id: "sync", icon: "sync", name: "Sync and backup" },
-  { id: "keyboard", icon: "keyboard", name: "Keyboard" },
-  { id: "about", icon: "info", name: "About" },
+const SECTIONS: { id: Section; icon: string; name: string; about: string }[] = [
+  { id: "general", icon: "tune", name: "General", about: "How Katana Desk starts, and how big everything is." },
+  { id: "appearance", icon: "palette", name: "Appearance", about: "Themes, cover sizes and the glass behind the sidebar." },
+  { id: "reading", icon: "menu_book", name: "Reading defaults", about: "How a book looks when it has no settings of its own." },
+  { id: "sources", icon: "cloud", name: "Sources", about: "Your Grimmory server and the folders on this PC." },
+  { id: "dictionaries", icon: "dictionary", name: "Dictionaries", about: "The built-in offline dictionaries and your own StarDict files." },
+  { id: "sync", icon: "sync", name: "Sync and backup", about: "What goes to Grimmory, and copies of your library and marks." },
+  { id: "keyboard", icon: "keyboard", name: "Keyboard", about: "Every key and click, in the library and in a book." },
+  { id: "about", icon: "info", name: "About", about: "The version, updates, and everything Katana Desk is built on." },
 ];
 
 /** Katana's themes: name, sidebar, ground, ink, selected item (drawn as little windows). */
@@ -157,7 +157,7 @@ function General() {
     return () => window.removeEventListener("katana-zoom", on);
   }, []);
   const opens: [string, string][] = [
-    ["auto", "Grimmory once signed in, else Local"],
+    ["auto", "Grimmory, or Local before you sign in"],
     ["grimmory", "Grimmory"],
     ["local", "Local"],
     ["last", "The book you read last"],
@@ -167,11 +167,16 @@ function General() {
     <>
       <div className="glab">Window</div>
       <div className="grp">
-        <div className="srow">
+        <div className="srow tight">
           <div className="tx"><b>Opens on</b><small>What you see when Katana Desk starts</small></div>
-          <select className="sel" value={opensOn} onChange={(e) => { setOpensOn(e.target.value); api.setSetting("app.opensOn", e.target.value); }} aria-label="Opens on">
-            {opens.map(([v, n]) => <option key={v} value={v}>{n}</option>)}
-          </select>
+        </div>
+        <div className="chips" role="radiogroup" aria-label="Opens on">
+          {opens.map(([v, n]) => (
+            <button type="button" key={v} role="radio" aria-checked={opensOn === v} className={`chip ${opensOn === v ? "on" : ""}`} onClick={() => { setOpensOn(v); api.setSetting("app.opensOn", v); }}>
+              {opensOn === v && <i className="ms">check</i>}
+              {n}
+            </button>
+          ))}
         </div>
         <div className="srow">
           <div className="tx"><b>App size</b><small>Ctrl + and Ctrl − change it anywhere outside a book (in a book they change the text)</small></div>
@@ -519,10 +524,11 @@ function About() {
 
 export function SettingsPage() {
   const [sec, setSec] = useState<Section>(() => (useUpdates.getState().phase === "found" ? "about" : "general"));
+  const here = SECTIONS.find((x) => x.id === sec) ?? SECTIONS[0];
   return (
     <div className="setp">
       <nav className="lpane" aria-label="Settings">
-        <span className="h" style={{ padding: "0 12px 8px" }}>Settings</span>
+        <span className="h">Settings</span>
         {SECTIONS.map((s) => (
           <button type="button" key={s.id} className={`nv ${sec === s.id ? "on" : ""}`} onClick={() => setSec(s.id)} aria-current={sec === s.id}>
             <i className="ms">{s.icon}</i>
@@ -531,6 +537,14 @@ export function SettingsPage() {
         ))}
       </nav>
       <div className="scroll ppane" key={sec}>
+        <div className="setbody">
+        <header className="sethead">
+          <span className="seticon"><i className="ms">{here.icon}</i></span>
+          <div>
+            <h1>{here.name}</h1>
+            <p>{here.about}</p>
+          </div>
+        </header>
         {sec === "general" && <General />}
         {sec === "appearance" && <Appearance />}
         {sec === "reading" && <ReadingDefaults />}
@@ -557,6 +571,7 @@ export function SettingsPage() {
           </>
         )}
         {sec === "about" && <About />}
+        </div>
       </div>
     </div>
   );

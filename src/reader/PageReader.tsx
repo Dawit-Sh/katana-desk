@@ -11,20 +11,28 @@ import { api, grimmory, type Book, type Offer } from "../lib/api";
 import { fmtWhen } from "../lib/format";
 import { CaptionButtons } from "../components/TitleBar";
 import { ContentsPanel, MarksPanel, Panel, type TocItem } from "./panels";
-import { COLOURS, exportMarkdown, hls, marks as marksApi, marksApi as marksSync, type Bookmark, type Colour, type Highlight, type Style } from "./marks";
+import { COLOURS, PDF_HEX, exportMarkdown, hls, marks as marksApi, marksApi as marksSync, pdfAnnots, type Annot, type Bookmark, type Colour, type Highlight, type Style } from "./marks";
 import { HighlightCard, SelectionCard, copyText, type Anchor } from "./cards";
 import { logRevisit, type Mark } from "./marklist";
 import { WordCard, type WordAsk } from "./WordCard";
 import { Review } from "../components/Review";
 import { learning, sentenceIn, words as wordsApi, type Word } from "../lib/words";
-import { PageView, roughBox, type Hit } from "./PageView";
+import { PageView, roughBox, type Box, type Hit, type Pen } from "./PageView";
 import { openPageSource, pagePlace, parsePlace, wordsPlace, type Outline, type PageSource, type PageText } from "./pagesrc";
 import "./reader.css";
 import "./pages.css";
 
 type Fit = "width" | "page" | null;
 type Mode = "scroll" | "one" | "two";
-type View = { fit: Fit; zoom: number; mode: Mode; rtl: boolean };
+/** the page pictures' colours: as they are, inverted (light on dark), sepia or dimmed */
+type Tint = "none" | "invert" | "sepia" | "dim";
+type View = { fit: Fit; zoom: number; mode: Mode; rtl: boolean; tint?: Tint };
+const TINTS: { id: Tint; name: string; title: string }[] = [
+  { id: "none", name: "As it is", title: "The pages as they are" },
+  { id: "invert", name: "Invert", title: "Light text on a dark page" },
+  { id: "sepia", name: "Sepia", title: "Warm paper" },
+  { id: "dim", name: "Dim", title: "A darker page for the evening" },
+];
 type SideTab = "pages" | "toc" | "marks";
 type Sel = { page: number; s: number; e: number; text: string; anchor: Anchor };
 type Card = { id: number; anchor: Anchor; editing: boolean };
@@ -43,11 +51,13 @@ const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.85, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.
 const defaultView = (kind: PageSource["kind"]): View =>
   kind === "comic" ? { fit: "page", zoom: 1, mode: "two", rtl: false } : { fit: "width", zoom: 1, mode: "scroll", rtl: false };
 
-const syncText = (s: string, comic: boolean) =>
+const syncText = (s: string, comic: boolean, pdf = false) =>
   s === "synced"
     ? comic
       ? "Bookmarks sync with Grimmory."
-      : "Bookmarks sync with Grimmory. Highlights stay on this PC."
+      : pdf
+        ? "Highlights, drawings and bookmarks sync with Grimmory's PDF reader."
+        : "Bookmarks sync with Grimmory. Highlights stay on this PC."
     : s === "waiting"
       ? "Changes wait to go to Grimmory."
       : s === "format"
@@ -145,6 +155,9 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
   const marksRef = useRef(marks);
   marksRef.current = marks;
   const [hl, setHl] = useState<Highlight[]>([]);
+  // a PDF's drawings (Grimmory's pen, its highlights, Katana's pen) and Katana's pen itself
+  const [annots, setAnnots] = useState<Annot[]>([]);
+  const [draw, setDraw] = useState<{ color: Colour; erase: boolean } | null>(null);
   const hlRef = useRef(hl);
   hlRef.current = hl;
   const [hlV, setHlV] = useState(0);
@@ -161,6 +174,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
   const lookRef = useRef(look);
   lookRef.current = look;
   const [pen, setPen] = useState(false);
+  const [tintOpen, setTintOpen] = useState(false);
   const penRef = useRef(pen);
   penRef.current = pen;
   const [toast, setToast] = useState<Toast | null>(null);
@@ -640,6 +654,88 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
     const box = rdRef.current!.getBoundingClientRect();
     return { left: r.left - box.left, right: r.right - box.left, top: r.top - box.top, bottom: r.bottom - box.top };
   };
+  // ---------- PDF drawings, and highlights going to Grimmory's PDF reader ----------
+  const isPdf = book.format === "pdf";
+  const annotsByPage = useMemo(() => {
+    const m = new Map<number, Annot[]>();
+    for (const a of annots) m.set(a.page, [...(m.get(a.page) ?? []), a]);
+    return m;
+  }, [annots]);
+  const syncTimer = useRef(0);
+  const syncPdf = useCallback(
+    (delay = 2500) => {
+      if (!isPdf) return;
+      clearTimeout(syncTimer.current);
+      syncTimer.current = window.setTimeout(() => {
+        pdfAnnots.sync(book.id).catch(() => {});
+      }, delay);
+    },
+    [isPdf, book.id],
+  );
+  useEffect(() => () => clearTimeout(syncTimer.current), []);
+  const reloadAnnots = useCallback(() => {
+    if (isPdf) pdfAnnots.list(book.id).then(setAnnots).catch(() => {});
+  }, [isPdf, book.id]);
+  // the words' boxes of each highlight, in PDF points, once per highlight (they go up with it)
+  const rectsSent = useRef(new Map<number, string>());
+  const sizesNow = useRef(sizes);
+  sizesNow.current = sizes;
+  const onRects = useCallback(
+    (h: Highlight, b: Box[]) => {
+      if (!isPdf) return;
+      const p = parsePlace(h.cfi);
+      const sz = p ? sizesNow.current[p.page] : null;
+      if (!p || !sz) return;
+      const W = sz.w * 0.75;
+      const H = sz.h * 0.75;
+      const rects = b.map((x) => [x.x * W, x.y * H, x.w * W, x.h * H].map((v) => Math.round(v * 100) / 100) as [number, number, number, number]);
+      const key = JSON.stringify(rects);
+      if (rectsSent.current.get(h.id) === key) return;
+      rectsSent.current.set(h.id, key);
+      pdfAnnots.rects(h.id, rects).then(() => syncPdf()).catch(() => {});
+    },
+    [isPdf, syncPdf],
+  );
+  const inkPen: Pen | null = useMemo(() => (draw ? { color: PDF_HEX[draw.color], width: 2, erase: draw.erase } : null), [draw]);
+  const onStroke = useCallback(
+    (page: number, pts: { x: number; y: number }[]) => {
+      if (!draw) return;
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
+      const x1 = Math.min(...xs) - 1;
+      const y1 = Math.min(...ys) - 1;
+      const data = {
+        type: 15,
+        id: crypto.randomUUID(),
+        pageIndex: page,
+        rect: { origin: { x: x1, y: y1 }, size: { width: Math.max(...xs) + 1 - x1, height: Math.max(...ys) + 1 - y1 } },
+        inkList: [{ points: pts }],
+        strokeColor: PDF_HEX[draw.color],
+        color: PDF_HEX[draw.color],
+        opacity: 1,
+        strokeWidth: 2,
+        author: "Katana Desk",
+      };
+      setAnnots((a) => [...a, { aid: data.id, page, kind: "ink", data: { annotation: data } }]);
+      pdfAnnots
+        .add(book.id, data)
+        .then(() => syncPdf())
+        .catch(() => reloadAnnots());
+    },
+    [draw, book.id, syncPdf, reloadAnnots],
+  );
+  const onErase = useCallback(
+    (aid: string) => {
+      setAnnots((a) => a.filter((x) => x.aid !== aid));
+      pdfAnnots.remove(aid).then(() => syncPdf()).catch(() => reloadAnnots());
+    },
+    [syncPdf, reloadAnnots],
+  );
+  // a highlight added, recoloured or removed here goes to Grimmory a moment later
+  useEffect(() => {
+    syncPdf();
+  }, [hl, syncPdf]);
+
   const hlByPage = useMemo(() => {
     const m = new Map<number, Highlight[]>();
     for (const h of hl) {
@@ -871,7 +967,8 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       marksRef.current = b;
       setMarks(b);
     }
-    marksSync.syncState(book.id).then((st) => setSyncLine(syncText(st, comic))).catch(() => {});
+    marksSync.syncState(book.id).then((st) => setSyncLine(syncText(st, comic, book.format === "pdf"))).catch(() => {});
+    if (book.format === "pdf") pdfAnnots.list(book.id).then(setAnnots).catch(() => {});
     placeMissing();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book.id]);
@@ -886,6 +983,41 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
     if (p.location && Number.isInteger(n) && n >= 1) show(n - 1, null, false);
     else if (p.fraction != null) show(Math.max(0, Math.ceil(p.fraction * s.count) - 1), null, false);
   };
+
+  // Keep up with Grimmory while the book is open: a look every 30 s, and when the window comes back to the
+  // front. Coming back from Grimmory's PDF reader with nothing read here since, the book follows to its page
+  // and leaves "Back to p. N"; reading here, it asks as at the start.
+  const followed = useRef(0);
+  const keepUpRef = useRef({ show, placeNow });
+  keepUpRef.current = { show, placeNow };
+  useEffect(() => {
+    let on = true;
+    const check = async (follow: boolean) => {
+      if (book.format === "pdf") pdfAnnots.sync(book.id).catch(() => {});
+      const p = await grimmory.keepUp(book.id, follow).catch(() => null);
+      const s = srcRef.current;
+      if (!on || !p || !s) return;
+      followed.current = Date.now();
+      setOffer(null);
+      const n = Number(p.location);
+      const to = p.location && Number.isInteger(n) && n >= 1 ? n - 1 : p.fraction != null ? Math.max(0, Math.ceil(p.fraction * s.count) - 1) : null;
+      if (to == null || to === pageRef.current) return;
+      setBack(keepUpRef.current.placeNow());
+      keepUpRef.current.show(to, null, false);
+      acted.current = false;
+    };
+    const iv = window.setInterval(() => {
+      if (document.visibilityState === "visible") check(false);
+    }, 30_000);
+    const un = getCurrentWindow().onFocusChanged(({ payload }) => {
+      if (payload) check(true);
+    });
+    return () => {
+      on = false;
+      clearInterval(iv);
+      un.then((f) => f());
+    };
+  }, [book.id]);
 
   // ---------- find ----------
   const runFind = useCallback(
@@ -977,8 +1109,8 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
   // ---------- keys, wheel, mouse ----------
   const act = useRef({ toggleMark, goBack, poke, hideBars, makeHighlight, copySel, lookUp, clearSelection, deleteHighlight, turn, zoomBy, show, stepHit, closeFind });
   act.current = { toggleMark, goBack, poke, hideBars, makeHighlight, copySel, lookUp, clearSelection, deleteHighlight, turn, zoomBy, show, stepHit, closeFind };
-  const ui = useRef({ side, card, word, review, find });
-  ui.current = { side, card, word, review, find };
+  const ui = useRef({ side, card, word, review, find, draw });
+  ui.current = { side, card, word, review, find, draw };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1033,6 +1165,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
         e.preventDefault();
         const u = ui.current;
         if (u.word) return setWord(null);
+        if (u.draw) return setDraw(null);
         if (u.card) return setCard(null);
         if (u.find) return a.closeFind();
         if (u.side) return setSide(null);
@@ -1126,10 +1259,13 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
     if (sc) ro.observe(sc);
     if (rdRef.current) ro.observe(rdRef.current);
     const unOffer = listen<number>("grimmory-offer", (e) => {
-      if (e.payload === book.id) grimmory.offer(book.id).then((o) => o && setOffer(o)).catch(() => {});
+      if (e.payload === book.id && Date.now() - followed.current > 3000) grimmory.offer(book.id).then((o) => o && setOffer(o)).catch(() => {});
     });
     const unMarks = listen<number>("marks-changed", (e) => {
-      if (e.payload === book.id) reloadMarks();
+      if (e.payload === book.id) {
+        reloadMarks();
+        reloadAnnots();
+      }
     });
     const unLost = listen<number>("marks-lost", (e) => {
       if (e.payload === book.id) marksSync.lost(book.id).then(setLost).catch(() => {});
@@ -1275,6 +1411,12 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
         onPinClick={onPinClick}
         onCorner={onCorner}
         onSize={comic ? onComicSize : undefined}
+        annots={isPdf ? annotsByPage.get(p) ?? EMPTY_ANNOTS : undefined}
+        pt={isPdf && sizes[p] ? { w: sizes[p].w * 0.75, h: sizes[p].h * 0.75 } : undefined}
+        pen={inkPen}
+        onRects={isPdf ? onRects : undefined}
+        onStroke={onStroke}
+        onErase={onErase}
       />
     );
   };
@@ -1341,7 +1483,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
     >
       <div className="pgarea" style={{ left: offL, right: 0 }}>
         <div
-          className={`pv m-${view.mode} ${pen ? "pen" : ""}`}
+          className={`pv m-${view.mode} ${pen ? "pen" : ""} t-${view.tint ?? "none"}`}
           ref={scRef}
           onScroll={onScroll}
           onPointerUp={onPointerUp}
@@ -1426,6 +1568,43 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
           </>
         )}
         <div className="grow" data-tauri-drag-region />
+        {state === "ready" && (
+          <span className="tintwrap">
+            <button
+              type="button"
+              className={`ib ${(view.tint ?? "none") !== "none" ? "on" : ""}`}
+              aria-label="Page colours"
+              aria-expanded={tintOpen}
+              title="Page colours: invert, sepia, dim"
+              onClick={() => setTintOpen(!tintOpen)}
+            >
+              <i className="ms">contrast</i>
+            </button>
+            {tintOpen && (
+              <div className="pop tintpop" role="radiogroup" aria-label="Page colours" onMouseLeave={() => setTintOpen(false)}>
+                {TINTS.map((t) => (
+                  <button
+                    type="button"
+                    key={t.id}
+                    role="radio"
+                    aria-checked={(view.tint ?? "none") === t.id}
+                    className={`tile ${(view.tint ?? "none") === t.id ? "on" : ""}`}
+                    title={t.title}
+                    onClick={() => {
+                      setView({ tint: t.id });
+                      setTintOpen(false);
+                    }}
+                  >
+                    <span className={`tintpg t-${t.id}`}>
+                      <i /><i /><i /><i />
+                    </span>
+                    <span className="tn">{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
+        )}
         {src?.hasText && (
           <>
             <button
@@ -1454,6 +1633,38 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
               <i className="ms">format_ink_highlighter</i>
             </button>
           </>
+        )}
+        {isPdf && state === "ready" && (
+          <span className="tintwrap">
+            <button
+              type="button"
+              className={`ib ${draw ? "on" : ""}`}
+              aria-label="Pen"
+              aria-pressed={!!draw}
+              title={draw ? "Pen on: draw on the page (Esc stops)" : "Pen: draw on the page, the same pen as Grimmory's PDF reader"}
+              onClick={() => setDraw(draw ? null : { color: "blue", erase: false })}
+            >
+              <i className="ms">draw</i>
+            </button>
+            {draw && (
+              <div className="pop penpop" role="group" aria-label="Pen">
+                {COLOURS.map((c) => (
+                  <button
+                    type="button"
+                    key={c.id}
+                    className={`dot ${!draw.erase && draw.color === c.id ? "on" : ""}`}
+                    style={{ ["--c" as string]: PDF_HEX[c.id] }}
+                    aria-label={`${c.name} pen`}
+                    title={`${c.name} pen`}
+                    onClick={() => setDraw({ color: c.id, erase: false })}
+                  />
+                ))}
+                <button type="button" className={`ib ${draw.erase ? "on" : ""}`} aria-label="Eraser" title="Eraser: touch a drawing to take it away" onClick={() => setDraw({ ...draw, erase: !draw.erase })}>
+                  <i className="ms">ink_eraser</i>
+                </button>
+              </div>
+            )}
+          </span>
         )}
         <button
           type="button"
@@ -1784,6 +1995,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
 
 const EMPTY_HL: Highlight[] = [];
 const EMPTY_HITS: Hit[] = [];
+const EMPTY_ANNOTS: Annot[] = [];
 
 /** The Pages tab: every page small, drawn as it scrolls into view, with its find matches and bookmark. */
 function Thumbs({

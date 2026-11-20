@@ -1,7 +1,7 @@
 // The Aa panel: reading settings for this book, "Save as default" for books without their own.
 // Show, don't name: every choice with a look is a little picture of the result, its name under it.
 import type { ReactNode } from "react";
-import { COLOURS, FONTS, MARGINS, SPACINGS, type LayoutId, type MarginId, type Prefs } from "./prefs";
+import { COLOURS, FONTS, MARGINS, SPACINGS, TEXTS, pageColours, type LayoutId, type MarginId, type Prefs } from "./prefs";
 
 /** A little page: lines drawn as bars, in the page's colours. */
 function MiniPage({
@@ -181,6 +181,32 @@ export function AaPanel({
             <MiniPage bg={c.bg} fg={c.fg} />
           </Tile>
         ))}
+      </div>
+      <button type="button" className="arow sw-row" onClick={() => set({ invert: !prefs.invert })} aria-pressed={prefs.invert}>
+        <span>
+          Invert colours
+          <small>{prefs.invert ? "The page and the text swap colours" : "Swap the page and text colours: light text on a dark page, or the other way"}</small>
+        </span>
+        <span className={`sw ${prefs.invert ? "on" : ""}`} />
+      </button>
+      <div className="grpl">Text colour</div>
+      <div className="tiles c4">
+        {TEXTS.map((t) => {
+          const pc = pageColours({ ...prefs, text: t.id });
+          return (
+            <Tile
+              key={t.id}
+              on={prefs.text === t.id}
+              name={t.name}
+              title={t.id === "auto" ? "The book's own colours on light pages, the page's text colour on dark ones" : t.id === "page" ? "The page colour's own text colour, even over the book's colours" : t.name}
+              onPick={() => set({ text: t.id })}
+            >
+              <span className="txc" style={{ background: pc.bg, color: t.id === "auto" && !pc.force ? undefined : pc.fg }}>
+                Aa
+              </span>
+            </Tile>
+          );
+        })}
       </div>
       {!fixed && (
         <>

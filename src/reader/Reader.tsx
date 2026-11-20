@@ -697,7 +697,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     [book.id],
   );
   const colours = pageColours(prefs);
-  const tone = prefs.colour === "theme" ? "" : colours.dark ? "tone-graphite" : "tone-paper";
+  const tone = prefs.colour === "theme" && !prefs.invert ? "" : colours.dark ? "tone-graphite" : "tone-paper";
 
   // Save the reading place: shortly after each turn, and when the book closes.
   const saveTimer = useRef<number>(0);
@@ -718,6 +718,38 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     acted.current = false;
     await goToPlace(v, p.location, p.fraction);
   };
+
+  // Keep up with Grimmory while the book is open: a look every 30 s, and when the window comes back to the
+  // front. Coming back from Grimmory's reader (or the Fire) with nothing read here since, the book follows
+  // to the newer place and leaves "Back to p. N"; reading here, it asks as at the start.
+  const followed = useRef(0);
+  const placeNowRef = useRef(placeNow);
+  placeNowRef.current = placeNow;
+  useEffect(() => {
+    let on = true;
+    const check = async (follow: boolean) => {
+      const p = await grimmory.keepUp(book.id, follow).catch(() => null);
+      const v = viewRef.current;
+      if (!on || !p || !v) return;
+      followed.current = Date.now();
+      setOffer(null);
+      const from = placeNowRef.current();
+      if (from) setBack(from);
+      await goToPlace(v, p.location, p.fraction);
+      acted.current = false;
+    };
+    const iv = window.setInterval(() => {
+      if (document.visibilityState === "visible") check(false);
+    }, 30_000);
+    const un = getCurrentWindow().onFocusChanged(({ payload }) => {
+      if (payload) check(true);
+    });
+    return () => {
+      on = false;
+      clearInterval(iv);
+      un.then((f) => f());
+    };
+  }, [book.id]);
 
   // keys need the latest of these without re-binding listeners in every book page
   const act = useRef({ toggleMark, goBack, poke, hideBars, setPrefs, makeHighlight, copySel, lookUp, openWord, clearSelection, deleteHighlight, reloadMarks, fillPages });
@@ -1200,7 +1232,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     host.addEventListener("wheel", onWheel, { passive: false });
     // Grimmory's place moved while the book is open (read on the Fire): ask
     const unOffer = listen<number>("grimmory-offer", (e) => {
-      if (e.payload === book.id) grimmory.offer(book.id).then((o) => o && setOffer(o)).catch(() => {});
+      if (e.payload === book.id && Date.now() - followed.current > 3000) grimmory.offer(book.id).then((o) => o && setOffer(o)).catch(() => {});
     });
     // highlights or bookmarks changed on Grimmory (or here, by a sync)
     const unMarks = listen<number>("marks-changed", (e) => {

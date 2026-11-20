@@ -113,7 +113,7 @@ export function BookSheet({ book }: { book: Book }) {
           </div>
         )}
       </div>
-      <dl className="dl">
+      <dl className="facts">
         <dt>Folder</dt><dd>{where}</dd>
         <dt>File</dt><dd>{fileName}</dd>
         <dt>Size</dt><dd>{fmtSize(book.size)}</dd>

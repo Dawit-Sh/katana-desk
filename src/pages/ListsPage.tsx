@@ -41,6 +41,14 @@ function openEntry(e: Entry, ctrl: boolean) {
   }
 }
 
+/** Lists to start from on an empty Lists page, drawn as faint lists ("ghosts"); one click makes one. */
+const GHOSTS = [
+  { name: "Want to read", icon: "bookmark_add", about: "Books you'd like to get to" },
+  { name: "Reading next", icon: "schedule", about: "The next few, in order" },
+  { name: "Finished", icon: "task_alt", about: "Books you've read" },
+  { name: "Favourites", icon: "favorite", about: "The ones you'd read again" },
+];
+
 export function ListsPage() {
   const all = useStore((s) => s.lists);
   const loadLists = useStore((s) => s.loadLists);
@@ -105,6 +113,50 @@ export function ListsPage() {
     </span>
   );
 
+  if (!all.length && naming !== "new")
+    return (
+      <div className="scroll lsempty">
+        <div className="sech">
+          <span className="h">Lists</span>
+          <button type="button" className="pill fill" onClick={() => { setName(""); setNaming("new"); }}>
+            <i className="ms">add</i>New list
+          </button>
+        </div>
+        <p className="lsintro">
+          Lists for books to read next, a course, a series, anything. Books from Local and Grimmory can share a list. Start
+          with one of these, or make your own.
+        </p>
+        <div className="lsghosts">
+          {GHOSTS.map((g) => (
+            <button
+              type="button"
+              key={g.name}
+              className="lsghost"
+              onClick={async () => {
+                const id = await listApi.create(g.name);
+                await loadLists();
+                setSel(id);
+              }}
+            >
+              <span className="gcovers" aria-hidden="true">
+                <i /><i /><i />
+              </span>
+              <span className="gname"><i className="ms">{g.icon}</i>{g.name}</span>
+              <small>{g.about}</small>
+              <span className="gadd"><i className="ms">add</i>Make this list</span>
+            </button>
+          ))}
+        </div>
+        <p className="lshint">Add books to a list from a book's page (Add to a list) or by right-clicking a cover.</p>
+        {undo && (
+          <div className="ls-undo">
+            <span>“{undo.name}” removed</span>
+            <button type="button" className="pill" onClick={putBack}>Undo</button>
+          </div>
+        )}
+      </div>
+    );
+
   return (
     <div className="bmpage ls">
       <div className="bmleft">
@@ -126,12 +178,6 @@ export function ListsPage() {
             </button>
           ))}
         </div>
-        {!all.length && naming !== "new" && (
-          <div className="empty" style={{ margin: "8px 0" }}>
-            Make a list for books to read next, a course, a series, anything. Books from Local and Grimmory can share a list:
-            add them from a book's page or by right-clicking a cover.
-          </div>
-        )}
         {undo && (
           <div className="ls-undo">
             <span>“{undo.name}” removed</span>
