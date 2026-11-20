@@ -7,7 +7,7 @@ import { Cover } from "../components/Cover";
 import type { Book } from "../lib/api";
 import { plural } from "../lib/format";
 import { useStore } from "../lib/store";
-import { MarkRows, Tabs, allMarks, inTab, matches, type Mark, type Tab } from "../reader/marklist";
+import { MarkRows, Tabs, allMarks, inTab, logRevisit, matches, type Mark, type Tab } from "../reader/marklist";
 import { exportMarkdown, hls, marks as bms, marksApi, type Bookmark, type Highlight, type MarkedBook, type MarksSync } from "../reader/marks";
 
 const counts = (b: MarkedBook) =>
@@ -167,7 +167,10 @@ export function BookmarksPage() {
           <Tabs tab={tab} setTab={setTab} counts={tabCounts} />
           <MarkRows
             marks={shown}
-            onGo={(m) => open(current.id, m.cfi)}
+            onGo={(m) => {
+              logRevisit(m);
+              open(current.id, m.cfi);
+            }}
             onRemove={onRemove}
             onSaveBookmark={onSaveBookmark}
             empty={needle ? "Nothing in this book matches." : tab === "notes" ? "No notes in this book yet." : `No ${tab === "all" ? "marks" : tab} in this book yet.`}

@@ -2143,6 +2143,7 @@ name = "katana-desk"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "flate2",
  "futures-util",
  "image",
  "md-5",
@@ -2153,6 +2154,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tauri",
  "tauri-build",
  "tauri-plugin-decorum",

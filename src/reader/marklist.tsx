@@ -5,8 +5,16 @@ import { useState } from "react";
 import { compare as cfiCompare } from "foliate-js/epubcfi.js";
 import { fmtWhen } from "../lib/format";
 import { hexOf, placeLabel, styleName, type Bookmark, type Highlight } from "./marks";
+import { learning } from "../lib/words";
 
-export type Tab = "all" | "highlights" | "notes" | "bookmarks";
+/** Going back to a mark from a list counts for the Journal ("Going back to your highlights"). */
+export function logRevisit(m: Mark) {
+  const note = !!noteOf(m)?.trim();
+  if (m.kind === "hl") learning.revisit(note ? "note" : "highlight", m.h.uuid, m.h.bookId);
+  else learning.revisit(note ? "note" : "bookmark", m.b.uuid, m.b.bookId);
+}
+
+export type Tab = "all" | "highlights" | "notes" | "bookmarks" | "words";
 export type Mark = { kind: "hl"; h: Highlight; cfi: string; frac: number | null } | { kind: "bm"; b: Bookmark; cfi: string; frac: number | null };
 
 const chapterOf = (m: Mark) => (m.kind === "hl" ? m.h.chapter : m.b.chapter)?.trim() || "";
@@ -33,6 +41,7 @@ export function allMarks(highlights: Highlight[], bookmarks: Bookmark[]): Mark[]
 }
 
 export function inTab(m: Mark, tab: Tab) {
+  if (tab === "words") return false;
   if (tab === "highlights") return m.kind === "hl";
   if (tab === "bookmarks") return m.kind === "bm";
   if (tab === "notes") return !!noteOf(m)?.trim();
@@ -50,19 +59,21 @@ export function matches(m: Mark, needle: string) {
   return [...hay, pl ? `page ${pl} p. ${pl}` : ""].join(" ").toLowerCase().includes(needle);
 }
 
-export function Tabs({ tab, setTab, counts }: { tab: Tab; setTab: (t: Tab) => void; counts: Record<Tab, number> }) {
+/** The tabs; Words shows when `counts.words` is given (the reader's marks panel). */
+export function Tabs({ tab, setTab, counts }: { tab: Tab; setTab: (t: Tab) => void; counts: Partial<Record<Tab, number>> }) {
   const tabs: [Tab, string][] = [
     ["all", "All"],
     ["highlights", "Highlights"],
     ["notes", "Notes"],
     ["bookmarks", "Bookmarks"],
   ];
+  if (counts.words != null) tabs.push(["words", "Words"]);
   return (
     <div className="tabs" role="tablist">
       {tabs.map(([t, name]) => (
         <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
           {name}
-          {t !== "all" && <em>{counts[t]}</em>}
+          {t !== "all" && (counts[t] ?? 0) > 0 && <em>{counts[t]}</em>}
         </button>
       ))}
     </div>

@@ -12,7 +12,10 @@ import { AaPanel } from "./AaPanel";
 import { ContentsPanel, MarksPanel, Panel, SearchPanel, type TocItem } from "./panels";
 import { COLOURS, exportMarkdown, hexOf, hls, marks as marksApi, marksApi as marksSync, type Bookmark, type Colour, type Highlight, type MarkPlace, type Style } from "./marks";
 import { HighlightCard, SelectionCard, copyText, type Anchor } from "./cards";
-import type { Mark } from "./marklist";
+import { logRevisit, type Mark } from "./marklist";
+import { WordCard, type WordAsk } from "./WordCard";
+import { Review } from "../components/Review";
+import { learning, sentenceAround, words as wordsApi, type Word } from "../lib/words";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { cleanNote, isNoteLink, noteElement } from "./footnotes";
 import { BUILT_IN, MARGINS, bookCss, loadPrefs, loadUiFonts, pageColours, saveBookPrefs, saveDefaultPrefs, type Prefs } from "./prefs";
@@ -236,6 +239,10 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   lookRef.current = look;
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef(0);
+  // the word card (Look up, a double-click), this book's saved words, the review cards
+  const [word, setWord] = useState<WordAsk | null>(null);
+  const [bookWords, setBookWords] = useState<Word[]>([]);
+  const [review, setReview] = useState(false);
   const [lost, setLost] = useState<{ highlights: number; bookmarks: number } | null>(null);
   const [syncLine, setSyncLine] = useState<string | null>(null);
   const annotClick = useRef(0);
@@ -254,7 +261,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   const barTimer = useRef(0);
   const overBars = useRef(false);
   const keep = useRef(false);
-  keep.current = floating || !!offer || !!note || !!sel || !!card || !!lost || state !== "ready";
+  keep.current = floating || !!offer || !!note || !!sel || !!card || !!word || review || !!lost || state !== "ready";
   const poke = useCallback(() => {
     setBars(true);
     clearTimeout(barTimer.current);
@@ -271,7 +278,12 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   useEffect(() => {
     if (keep.current) setBars(true);
     else poke();
-  }, [floating, offer, note, state, poke, lost]);
+  }, [floating, offer, note, state, poke, lost, word, review]);
+
+  // this book's saved words, for the Words tab
+  useEffect(() => {
+    wordsApi.list(book.id).then(setBookWords).catch(() => {});
+  }, [book.id]);
 
   // ---------- where you are ----------
   const pageOfFraction = useCallback(
@@ -480,10 +492,61 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     showToast({ text: "Copied" });
   };
 
+  /** Opens the word card for words on the page (Look up, L, or a double-click). */
+  const openWord = (s: { index: number; range: Range; doc: Document; text: string; cfi: string | null; anchor: Anchor }) => {
+    const v = viewRef.current;
+    let progress: { tocItem?: { label?: string }; pageItem?: { label?: string } } = {};
+    try {
+      progress = v?.getProgressOf?.(s.index, s.range) ?? {};
+    } catch {
+      /* no place: still looked up */
+    }
+    const printedPage = progress.pageItem?.label ? String(progress.pageItem.label) : null;
+    const shown = Number(pageLabelRef.current.replace(/^p\. /, ""));
+    const host = hostRef.current?.getBoundingClientRect();
+    const rightPage = cols.current === 2 && host && s.anchor.left > host.left + host.width / 2;
+    setSel(null);
+    setCard(null);
+    setWord({
+      text: s.text,
+      sentence: sentenceAround(s.range),
+      anchor: s.anchor,
+      cfi: s.cfi,
+      fraction: last.current?.fraction ?? (v ? fractionIn(v, s.index, s.doc, s.range) : null),
+      pageLabel: printedPage ?? (shown ? String(shown + (rightPage ? 1 : 0)) : null),
+      chapter: progress.tocItem?.label?.trim() || last.current?.tocItem?.label?.trim() || null,
+    });
+  };
+
   const lookUp = () => {
     const s = selRef.current;
-    if (!s) return;
-    showToast({ text: `The built-in dictionary comes in the next version: “${s.text.slice(0, 40)}” isn't looked up yet.` });
+    if (!s || s.text.length > 60) return;
+    openWord(s);
+  };
+
+  const wordSaved = (w: Word) => {
+    setBookWords((list) => [w, ...list.filter((x) => x.id !== w.id)]);
+    showToast({ text: `“${w.word}” is in My words` });
+  };
+  const wordRemoved = (w: Word) => {
+    setBookWords((list) => list.filter((x) => x.id !== w.id));
+    showToast({
+      text: `“${w.word}” taken out of My words`,
+      undo: async () => {
+        const back = await wordsApi.restore(w).catch(() => null);
+        if (back) setBookWords((list) => [back, ...list.filter((x) => x.id !== back.id)].sort((a, b) => b.createdAt - a.createdAt));
+      },
+    });
+  };
+  const removeWord = async (w: Word) => {
+    const gone = await wordsApi.remove(w.id).catch(() => null);
+    if (gone) wordRemoved(gone);
+  };
+  const goToWord = (w: Word) => {
+    if (!w.cfi) return;
+    learning.revisit("word", w.uuid, book.id);
+    jumpTo(w.cfi);
+    if (!dockR) setRight(null);
   };
 
   /** Reloads marks after Grimmory changed them, and redraws what moved. */
@@ -607,6 +670,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   };
 
   const goToMark = (m: Mark) => {
+    logRevisit(m);
     jumpTo(m.cfi);
     if (!dockR) setRight(null);
   };
@@ -654,10 +718,10 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   };
 
   // keys need the latest of these without re-binding listeners in every book page
-  const act = useRef({ toggleMark, goBack, poke, hideBars, setPrefs, makeHighlight, copySel, lookUp, clearSelection, deleteHighlight, reloadMarks, fillPages });
-  act.current = { toggleMark, goBack, poke, hideBars, setPrefs, makeHighlight, copySel, lookUp, clearSelection, deleteHighlight, reloadMarks, fillPages };
-  const ui = useRef({ left, right, note, card });
-  ui.current = { left, right, note, card };
+  const act = useRef({ toggleMark, goBack, poke, hideBars, setPrefs, makeHighlight, copySel, lookUp, openWord, clearSelection, deleteHighlight, reloadMarks, fillPages });
+  act.current = { toggleMark, goBack, poke, hideBars, setPrefs, makeHighlight, copySel, lookUp, openWord, clearSelection, deleteHighlight, reloadMarks, fillPages };
+  const ui = useRef({ left, right, note, card, word, review });
+  ui.current = { left, right, note, card, word, review };
 
   useEffect(() => {
     let cancelled = false;
@@ -675,6 +739,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       setNote(null);
       setSel(null);
       setCard(null);
+      setWord(null);
       if (how === "prev") v.prev(distance);
       else if (how === "next") v.next(distance);
       else if (how === "left") v.goLeft();
@@ -682,6 +747,8 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     };
 
     const onKey = (e: KeyboardEvent) => {
+      // the review cards take the keys while they're open
+      if (ui.current.review) return;
       const t = e.target as HTMLElement | null;
       const typing = !!t?.closest?.("input, textarea, [contenteditable]");
       const k = e.key.toLowerCase();
@@ -738,6 +805,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
         e.preventDefault();
         // Esc closes the top-most thing: a note, a floating panel, then the book
         const u = ui.current;
+        if (u.word) return setWord(null);
         if (u.card) return setCard(null);
         if (u.note) return setNote(null);
         if (u.right) return setRight(null);
@@ -783,9 +851,17 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       }
     };
 
+    let edgeTurn = 0;
+    let lastDouble = 0;
     // A click in the outer fifth of the page turns it; the middle is left for reading and selecting.
     const onDocClick = (doc: Document) => (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0) return;
+      // the second click of a double-click (a word looked up) never turns the page
+      if (e.detail >= 2) {
+        lastDouble = Date.now();
+        clearTimeout(edgeTurn);
+        return;
+      }
       if ((e.target as Element)?.closest?.("a[href]")) return;
       setNote(null);
       if (scrolled()) return;
@@ -798,11 +874,19 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       // a click on a highlight opens its card (foliate-js says so in the same click); a click off an
       // open card closes it; only then does the outer fifth turn the page
       const hadCard = !!cardRef.current;
+      const hadWord = !!ui.current.word;
+      // a click on words waits a moment for a second click; one on the margin turns at once
+      const t = e.target as Element | null;
+      const onWords = !!t && t !== doc.body && t !== doc.documentElement && /\S/.test(t.textContent ?? "");
       setTimeout(() => {
         if (Date.now() - annotClick.current < 400) return;
         if (hadCard) return setCard(null);
-        if (f < 0.2) turn("left");
-        else if (f > 0.8) turn("right");
+        if (hadWord) return setWord(null);
+        if (f >= 0.2 && f <= 0.8) return;
+        clearTimeout(edgeTurn);
+        edgeTurn = window.setTimeout(() => {
+          if (Date.now() - lastDouble > 600) turn(f < 0.2 ? "left" : "right");
+        }, onWords ? 300 : 0);
       }, 0);
     };
 
@@ -824,6 +908,28 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
         }
         setCard(null);
         setSel({ index, range, doc, text, cfi, anchor: anchorOf(range, doc, rdRef.current!) });
+      }, 0);
+    };
+    // a double-click on a word: the word card (after the selection card the click made)
+    const onDblClick = (doc: Document, index: number) => () => {
+      setTimeout(() => {
+        const s = doc.getSelection();
+        const v = viewRef.current;
+        if (!s || s.isCollapsed || !s.rangeCount || !v) return;
+        const range = s.getRangeAt(0).cloneRange();
+        const text = range
+          .toString()
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+        if (!text || text.length > 40) return;
+        let cfi: string | null = null;
+        try {
+          cfi = v.getCFI(index, range);
+        } catch {
+          /* looked up without a place */
+        }
+        act.current.openWord({ index, range, doc, text, cfi, anchor: anchorOf(range, doc, rdRef.current!) });
       }, 0);
     };
     const onSelChange = (doc: Document) => () => {
@@ -935,6 +1041,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       doc.addEventListener("click", onDocClick(doc));
       doc.addEventListener("mousemove", onMove);
       doc.addEventListener("pointerup", onPointerUp(doc, index));
+      doc.addEventListener("dblclick", onDblClick(doc, index));
       doc.addEventListener("selectionchange", onSelChange(doc));
     };
 
@@ -1489,6 +1596,11 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
                 onRemove={removeAnyMark}
                 onSaveBookmark={saveBookmark}
                 onExport={exportMarks}
+                words={bookWords}
+                onGoWord={goToWord}
+                onRemoveWord={removeWord}
+                onReview={() => setReview(true)}
+                onToast={(text) => showToast({ text })}
               />
             </Panel>
           )}
@@ -1628,6 +1740,26 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
             />
           );
         })()}
+
+      {word && (
+        <WordCard
+          key={`${word.cfi}|${word.text}`}
+          ask={word}
+          room={room}
+          bookId={book.id}
+          onClose={() => setWord(null)}
+          onSaved={wordSaved}
+          onRemoved={wordRemoved}
+        />
+      )}
+
+      {review && (
+        <Review
+          bookId={book.id}
+          onClose={() => setReview(false)}
+          onChanged={() => wordsApi.list(book.id).then(setBookWords).catch(() => {})}
+        />
+      )}
 
       {toast && (
         <div className="toast" role="status">

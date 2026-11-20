@@ -14,13 +14,23 @@ function placeCard(a: Anchor, w: number, h: number, roomW: number, roomH: number
   const bottom = roomH - 64;
   const above = a.top - gap - h >= top;
   const below = a.bottom + gap + h <= bottom;
-  const y = above ? a.top - gap - h : below ? a.bottom + gap : Math.max(top, Math.min(bottom - h, a.bottom + gap));
   const cx = (a.left + a.right) / 2;
+  if (!above && !below) {
+    // a tall card: beside the words, on the side with more room, so it never covers them
+    const right = a.right + gap + w <= roomW - 12;
+    const left = a.left - gap - w >= 12;
+    if (right || left) {
+      const x = right && (!left || roomW - a.right > a.left) ? a.right + gap : a.left - gap - w;
+      const y = Math.max(top, Math.min(bottom - h, (a.top + a.bottom) / 2 - h / 2));
+      return { left: x, top: y };
+    }
+  }
+  const y = above ? a.top - gap - h : below ? a.bottom + gap : Math.max(top, Math.min(bottom - h, a.bottom + gap));
   const x = Math.max(12, Math.min(roomW - w - 12, cx - w / 2));
   return { left: x, top: y };
 }
 
-function useCardPlace(anchor: Anchor, room: { w: number; h: number }) {
+export function useCardPlace(anchor: Anchor, room: { w: number; h: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {

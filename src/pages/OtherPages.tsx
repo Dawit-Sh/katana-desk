@@ -4,10 +4,10 @@ import { api, grimmory } from "../lib/api";
 import { fmtTime, plural } from "../lib/format";
 import { useStore, type Page, type ThemePref } from "../lib/store";
 import { addFolder } from "./LocalPage";
+import { DictCredits, DictSettings } from "./DictSettings";
 
 const SOON: Partial<Record<Page, { icon: string; title: string; text: string }>> = {
   lists: { icon: "checklist", title: "Lists", text: "Your reading lists come in a later version." },
-  words: { icon: "dictionary", title: "My words", text: "Words you save from the built-in dictionaries come in a later version." },
   journal: {
     icon: "history",
     title: "Journal",
@@ -177,6 +177,8 @@ export function SettingsPage() {
           <button type="button" className="pill fill" onClick={addFolder}><i className="ms">create_new_folder</i>Add a folder</button>
         </div>
       </div>
+      <div className="glab">Dictionaries</div>
+      <DictSettings />
       <div className="glab">About</div>
       <div className="grp">
         <div className="srow">
@@ -185,6 +187,7 @@ export function SettingsPage() {
             <small>The desktop version of Katana. Free software under GPL-3.0-or-later · github.com/Dawit-Sh/katana-desk</small>
           </div>
         </div>
+        <DictCredits />
       </div>
     </div>
   );

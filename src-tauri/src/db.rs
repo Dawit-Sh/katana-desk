@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 pub struct Db(pub Mutex<Connection>);
 
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 5;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -206,6 +206,10 @@ impl Db {
         if version < 4 {
             // highlights and what Grimmory last had of each mark (milestone 4), additive only
             conn.execute_batch(crate::highlights::SCHEMA_V4)?;
+        }
+        if version < 5 {
+            // My words, their review and the learning numbers (milestone 5), additive only
+            conn.execute_batch(crate::words::SCHEMA_V5)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Overlayer } from "foliate-js/overlayer.js";
 import type { Bookmark, Highlight } from "./marks";
 import { MarkRows, Tabs, allMarks, byPlace, inTab, matches, type Mark, type Tab } from "./marklist";
+import { WordRows, wordMatches } from "./wordlist";
+import { exportWords, isDue, type Word } from "../lib/words";
 
 // biome-ignore lint: foliate-js has no types
 type FoliateView = HTMLElement & any;
@@ -331,6 +333,11 @@ export function MarksPanel({
   onRemove,
   onSaveBookmark,
   onExport,
+  words,
+  onGoWord,
+  onRemoveWord,
+  onReview,
+  onToast,
 }: {
   highlights: Highlight[];
   bookmarks: Bookmark[];
@@ -343,6 +350,12 @@ export function MarksPanel({
   onRemove: (m: Mark) => void;
   onSaveBookmark: (b: Bookmark, title: string | null, note: string | null) => void;
   onExport: () => void;
+  /** this book's saved words, for the Words tab */
+  words: Word[];
+  onGoWord: (w: Word) => void;
+  onRemoveWord: (w: Word) => void;
+  onReview: () => void;
+  onToast: (text: string) => void;
 }) {
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<Tab>("all");
@@ -354,8 +367,9 @@ export function MarksPanel({
       highlights: highlights.length,
       notes: all.filter((m) => inTab(m, "notes")).length,
       bookmarks: bookmarks.length,
+      words: words.length,
     }),
-    [all, highlights.length, bookmarks.length],
+    [all, highlights.length, bookmarks.length, words.length],
   );
   const shown = all.filter((m) => inTab(m, tab) && matches(m, needle));
   const now = { cfi: hereCfi ?? "", frac: fraction };
@@ -381,6 +395,51 @@ export function MarksPanel({
     ) : (
       "No highlights yet. Select words and click a colour."
     );
+  if (tab === "words") {
+    const shownWords = words.filter((w) => wordMatches(w, needle));
+    const due = words.filter((w) => isDue(w)).length;
+    return (
+      <>
+        <Tabs tab={tab} setTab={setTab} counts={counts} />
+        {words.length > 3 && (
+          <div className="sfield">
+            <i className="ms">search</i>
+            <input value={q} placeholder="Search words" aria-label="Search words" onChange={(e) => setQ(e.target.value)} />
+            {q && (
+              <button type="button" className="clear" aria-label="Clear" onClick={() => setQ("")}>
+                <i className="ms">close</i>
+              </button>
+            )}
+          </div>
+        )}
+        <WordRows
+          list={shownWords}
+          onGo={onGoWord}
+          onRemove={onRemoveWord}
+          empty={needle ? "Nothing matches." : "No words from this book yet. Double-click a word, or select it and press L, then Save to My words."}
+        />
+        <div className="pfoot">
+          <button type="button" className={`pill ${due ? "fill" : "tone"}`} onClick={onReview} disabled={!words.length} title="Flashcards of this book's words">
+            <i className="ms">style</i>
+            {due ? `Review · ${due} due` : "Review"}
+          </button>
+          <span className="grow" />
+          <button
+            type="button"
+            className="pill tone"
+            disabled={!words.length}
+            title="Save this book's words, their meanings and sentences as a Markdown file"
+            onClick={async () => {
+              const p = await exportWords(words[0]?.bookId ?? null).catch((e) => (onToast(String(e)), null));
+              if (p) onToast(`Saved ${p.split(/[\\/]/).pop()}`);
+            }}
+          >
+            <i className="ms">download</i>Export
+          </button>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <Tabs tab={tab} setTab={setTab} counts={counts} />

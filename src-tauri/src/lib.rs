@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod db;
+mod dict;
 mod grimmory;
 mod highlights;
 mod library;
 mod marks;
 mod meta;
+mod resumable;
+mod words;
 
 use db::{Book, Folder};
 use library::{Library, ScanState};
@@ -263,7 +266,12 @@ fn update_highlight(app: AppHandle, lib: State<Library>, id: i64, color: String,
     let h = {
         let conn = lib.db.0.lock().unwrap();
         highlights::update(&conn, id, &color, &style, note.as_deref()).map_err(err)?;
-        highlights::get(&conn, id).map_err(err)?
+        let h = highlights::get(&conn, id).map_err(err)?;
+        // a highlight edited counts as going back to it, for the Journal
+        if let Some(h) = &h {
+            let _ = words::log(&conn, "edit", Some(&h.uuid), Some(h.book_id), None, &today());
+        }
+        h
     };
     if let Some(h) = &h {
         grimmory::marks_sync::schedule(&app, h.book_id);
@@ -355,6 +363,123 @@ fn export_marks(lib: State<Library>, book_id: i64, path: String) -> Res<()> {
     std::fs::write(&path, md).map_err(|e| format!("The file couldn't be written: {e}"))
 }
 
+// ---------- My words, review cards, the learning numbers (milestone 5) ----------
+
+fn today() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+#[tauri::command]
+fn words_list(lib: State<Library>, book_id: Option<i64>) -> Res<Vec<words::Word>> {
+    let conn = lib.db.0.lock().unwrap();
+    words::list(&conn, book_id).map_err(err)
+}
+
+#[tauri::command]
+fn word_find(lib: State<Library>, word: String) -> Res<Option<words::Word>> {
+    let conn = lib.db.0.lock().unwrap();
+    words::find(&conn, &word).map_err(err)
+}
+
+/// Saves a word to My words, with its meaning from the built-in dictionary when the card didn't have one.
+#[tauri::command]
+async fn word_save(app: AppHandle, w: words::NewWord) -> Res<words::Word> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut w = w;
+        if w.meaning.is_none() {
+            let look = if w.headword.is_empty() { w.word.clone() } else { w.headword.clone() };
+            if let Some((h, pos, m)) = dict::meaning_of(&app, &look) {
+                if w.headword.is_empty() {
+                    w.headword = h;
+                }
+                w.meaning = Some(m);
+                w.pos = w.pos.or(pos);
+            }
+        }
+        let lib = app.state::<Library>();
+        let conn = lib.db.0.lock().unwrap();
+        words::save(&conn, &w).map_err(err)
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+fn word_remove(lib: State<Library>, id: i64) -> Res<Option<words::Word>> {
+    let conn = lib.db.0.lock().unwrap();
+    words::remove(&conn, id).map_err(err)
+}
+
+#[tauri::command]
+fn word_restore(lib: State<Library>, w: words::Word) -> Res<words::Word> {
+    let conn = lib.db.0.lock().unwrap();
+    words::restore(&conn, &w).map_err(err)
+}
+
+#[tauri::command]
+fn word_note(lib: State<Library>, id: i64, note: Option<String>) -> Res<()> {
+    let conn = lib.db.0.lock().unwrap();
+    words::set_note(&conn, id, note.as_deref()).map_err(err)
+}
+
+/// Words saved before a dictionary was here get their meaning now. Returns how many got one.
+#[tauri::command]
+async fn words_fill_meanings(app: AppHandle) -> Res<usize> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = app.state::<Library>();
+        let todo = words::without_meaning(&lib.db.0.lock().unwrap()).map_err(err)?;
+        let mut n = 0;
+        for (id, hw) in todo {
+            if let Some((_, pos, m)) = dict::meaning_of(&app, &hw) {
+                words::set_meaning(&lib.db.0.lock().unwrap(), id, &m, pos.as_deref()).map_err(err)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    })
+    .await
+    .map_err(err)?
+}
+
+#[tauri::command]
+fn review_due(lib: State<Library>, book_id: Option<i64>, all: bool) -> Res<Vec<words::Word>> {
+    let conn = lib.db.0.lock().unwrap();
+    words::due(&conn, book_id, all).map_err(err)
+}
+
+#[tauri::command]
+fn review_answer(lib: State<Library>, id: i64, known: bool, first: bool) -> Res<Option<words::Word>> {
+    let conn = lib.db.0.lock().unwrap();
+    words::answer(&conn, id, known, first, &today()).map_err(err)
+}
+
+/// A learning event from the screens: a mark or word gone back to ("revisit"), a word looked up ("lookup").
+#[tauri::command]
+fn learning_log(lib: State<Library>, kind: String, mark: Option<String>, book_id: Option<i64>, detail: Option<String>) -> Res<()> {
+    if !matches!(kind.as_str(), "revisit" | "lookup") {
+        return Err("Unknown kind".into());
+    }
+    let conn = lib.db.0.lock().unwrap();
+    words::log(&conn, &kind, mark.as_deref(), book_id, detail.as_deref(), &today()).map_err(err)
+}
+
+#[tauri::command]
+fn learning_stats(lib: State<Library>) -> Res<words::Learning> {
+    let conn = lib.db.0.lock().unwrap();
+    words::stats(&conn, chrono::Local::now().date_naive()).map_err(err)
+}
+
+#[tauri::command]
+fn words_export(lib: State<Library>, path: String, book_id: Option<i64>) -> Res<usize> {
+    let (md, n) = {
+        let conn = lib.db.0.lock().unwrap();
+        let list = words::list(&conn, book_id).map_err(err)?;
+        (words::markdown(&list, &chrono::Local::now().format("%-d %B %Y").to_string()), list.len())
+    };
+    std::fs::write(&path, md).map_err(|e| format!("The file couldn't be written: {e}"))?;
+    Ok(n)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReaderPrefs {
@@ -406,6 +531,7 @@ pub fn run() {
             let gdir = data.join("grimmory");
             std::fs::create_dir_all(gdir.join("books"))?;
             app.manage(grimmory::Grimmory::new(db.clone(), gdir.clone()));
+            app.manage(dict::Dicts::new(db.clone(), data.join("dictionaries")));
 
             library::allow(&handle, &covers, true);
             // downloaded Grimmory books are read from here
@@ -421,6 +547,7 @@ pub fn run() {
             }
             library::scan_in_background(handle.clone(), None);
             grimmory::start(&handle);
+            dict::start(&handle);
 
             if let Some(win) = app.get_webview_window("main") {
                 // KATANA_QUIET=1: for test runs, the window opens off-screen, out of the taskbar and never takes focus
@@ -482,6 +609,29 @@ pub fn run() {
             grimmory::marks_sync::marks_sync_state,
             reader_prefs,
             set_book_prefs,
+            words_list,
+            word_find,
+            word_save,
+            word_remove,
+            word_restore,
+            word_note,
+            words_fill_meanings,
+            review_due,
+            review_answer,
+            learning_log,
+            learning_stats,
+            words_export,
+            dict::dict_lookup,
+            dict::dict_status,
+            dict::dict_refresh,
+            dict::dict_download,
+            dict::dict_pause,
+            dict::dict_cancel,
+            dict::dict_remove,
+            dict::dict_set_url,
+            dict::stardict_add,
+            dict::stardict_remove,
+            dict::open_url,
             grimmory::grimmory_status,
             grimmory::grimmory_sign_in,
             grimmory::grimmory_sign_out,

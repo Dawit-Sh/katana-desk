@@ -9,6 +9,7 @@ import { Rail, Sidebar } from "./components/Sidebar";
 import { LocalPage, addBooks } from "./pages/LocalPage";
 import { SettingsPage, SoonPage } from "./pages/OtherPages";
 import { BookmarksPage } from "./pages/BookmarksPage";
+import { WordsPage } from "./pages/WordsPage";
 import { GrimmoryPage } from "./pages/GrimmoryPage";
 import { Reader } from "./reader/Reader";
 
@@ -157,6 +158,8 @@ export function App() {
         return <SettingsPage />;
       case "bookmarks":
         return <BookmarksPage />;
+      case "words":
+        return <WordsPage />;
       default:
         return <SoonPage page={s.page} />;
     }

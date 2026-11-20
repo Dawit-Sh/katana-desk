@@ -73,8 +73,7 @@ Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/sean
 
 ## Milestone 4: Highlights and notes
 
-- Select words and the selection card shows above them: Highlight, Note, Copy, Look up (the built-in dictionary comes in
-  milestone 5), and five colour dots. One click on a dot highlights in that colour and the last style.
+- Select words and the selection card shows above them: Highlight, Note, Copy, Look up, and five colour dots. One click on a dot highlights in that colour and the last style.
 - Four styles: highlight, underline, strike and squiggle, drawn by foliate-js's overlayer. On dark pages a highlight
   lightens the words under it.
 - Click a highlight for its card: the styles as little pictures in its colour, the colours, its note (click to write,
@@ -91,13 +90,37 @@ Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/sean
   most of a book's marks is asked about instead of believed. Grimmory's zone-less times are never compared with this PC's
   clock: they are first put on it with the server's own "now". MOBI, AZW3, FB2 and CBZ marks stay on this PC.
 
+## Milestone 5: Words
+
+- Full dictionaries built in and offline: English Wiktionary (from [wiktextract](https://github.com/tatuylonen/wiktextract)'s
+  data on [kaikki.org](https://kaikki.org), CC BY-SA 4.0) and [Open English WordNet](https://github.com/globalwordnet/english-wordnet)
+  (CC BY 4.0). They come down on the first look up (about 138 MB and 21 MB), with progress, Pause and Go on; a download
+  goes on where it stopped after a cut connection or a restart, and each file is checked against its SHA-256 before it's
+  used. Settings › Dictionaries shows them, removes them, and has the address they come from.
+- Your own StarDict dictionaries (`.ifo` with its `.idx` and `.dict` or `.dict.dz`, `.syn` too) are read where they are and
+  get their own tab. Their HTML is shown as plain text.
+- The word card: double-click a word, or select words and press L (or Look up). Each dictionary that knows the word has a
+  tab: senses with examples, pronunciation, origin, similar words (a click looks them up, with a way back) and the sentence
+  from the book with the word set apart. A form finds its headword ("geese" goose, "clutching" clutch, "ran" run). Save to My
+  words, Full entry, and a small button that looks the word up on Wiktionary online. Lookups take a few milliseconds.
+- My words, in the sidebar and as the Words tab of the marks panel: each word with its meaning from the built-in
+  dictionary, the sentence it was met in, the book and page; search, a book filter, the full entry and a note per word, a
+  way back to the sentence, Take out with Undo, and Markdown export.
+- Review cards: the word and its sentence, then its meaning (Space); 1 Again, 2 I know it. Katana's schedule: a word known
+  comes back after 1, 3, 7, 14, then 30 days; Again brings it back later in the same round.
+- The learning numbers for the Journal (milestone 7) are kept from now on: words learned (known at the 7-day step), reviews
+  and first-try answers, words looked up, and highlights, notes, bookmarks and words gone back to from a list.
+
+The dictionary files are made once by `tools/build-dictionary.py` (see its notes) and published with the app's releases.
+
 ## Keys
 
 | Where | Keys |
 |---|---|
 | Anywhere | Ctrl K search · Ctrl O open a file · Ctrl , settings · F11 full screen |
 | Library | Arrows move between covers · Space or a click shows the book's page · Enter or a double-click opens it · Esc closes the page |
-| Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Ctrl B bookmark · Ctrl F search · Alt ← back to where you jumped from · Ctrl + / Ctrl − / Ctrl 0 text size · Esc closes a card, note or panel, then the book |
+| Reading | → Space Page Down next · ← Page Up previous · the wheel · a click in the outer fifth · Ctrl B bookmark · Ctrl F search · Alt ← back to where you jumped from · Ctrl + / Ctrl − / Ctrl 0 text size · a double-click on a word looks it up · Esc closes a card, note or panel, then the book |
+| Review cards | Space shows the meaning · 1 Again · 2 I know it · Esc closes |
 | Words selected | H highlight · 1 to 5 in that colour · N with a note · C copy · L look up · Esc lets go |
 | A highlight's card | Delete removes it · Esc closes it |
 

@@ -7,6 +7,7 @@ import "@fontsource/noto-serif/400-italic.css";
 import "@fontsource/noto-serif/500.css";
 import "material-symbols/rounded.css";
 import "./styles/app.css";
+import "./styles/words.css";
 import { App } from "./App";
 import { api, grimmory } from "./lib/api";
 import { useStore, type GSort, type ThemePref } from "./lib/store";

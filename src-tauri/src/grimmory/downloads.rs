@@ -1,5 +1,6 @@
 //! Downloads from Grimmory that pause and go on where they stopped (HTTP Range, the way Katana on
-//! Android does it, which Grimmory's content endpoint serves through Spring).
+//! Android does it, which Grimmory's content endpoint serves through Spring). The Range rules live in
+//! `crate::resumable`, shared with the dictionary downloads.
 //!
 //! - Bytes go into `partial/<id>.part`, with the length and `Last-Modified`/`ETag` beside it. Only a
 //!   whole file moves to `books/<id>/<file name>`, so half a book is never taken for a book.
@@ -13,18 +14,17 @@
 use super::catalog::gbook;
 use super::{conn_of, g, is_connection, send, server_message, GErr};
 use crate::{db, library, meta};
-use futures_util::StreamExt;
-use reqwest::header::{ACCEPT_ENCODING, CONTENT_RANGE, ETAG, IF_RANGE, LAST_MODIFIED, RANGE};
+use crate::resumable;
+use reqwest::header::ACCEPT_ENCODING;
 use reqwest::StatusCode;
 use rusqlite::params;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -37,13 +37,6 @@ pub struct Dl {
     pub error: Option<String>,
     pub local_id: Option<i64>,
     pub open_after: bool,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-struct Info {
-    total: u64,
-    last_modified: Option<String>,
-    etag: Option<String>,
 }
 
 struct Running {
@@ -201,33 +194,17 @@ async fn run(app: &AppHandle, id: i64, stop: &AtomicBool) -> Outcome {
         Ok(Some(b)) => b,
         _ => return Outcome::Failed("This book is no longer on Grimmory.".into()),
     };
-    let part = part_path(app, id);
-    let info_p = info_path(app, id);
-    let _ = std::fs::create_dir_all(part.parent().unwrap());
+    let p = resumable::Part { part: part_path(app, id), info: info_path(app, id) };
     for _attempt in 0..3 {
-        let info: Option<Info> = std::fs::read(&info_p).ok().and_then(|b| serde_json::from_slice(&b).ok());
-        let mut have = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
-        if info.is_none() || have == 0 {
-            // bytes kept without their info aren't trusted
-            let _ = std::fs::remove_file(&part);
-            have = 0;
-        }
-        let info = info.unwrap_or_default();
+        let (have, info) = p.kept();
         if have > 0 && info.total > 0 && have >= info.total {
-            return finish(app, id, &part, &gb.file_name);
+            return finish(app, id, &p.part, &gb.file_name);
         }
-        let lm = info.last_modified.clone();
-        let et = info.etag.clone();
         put(app, id, "running", have, info.total, None);
+        let ask = info.clone();
+        let pp = &p;
         let resp = send(app, move |c, base, tok| {
-            let mut r = c.get(format!("{base}/api/v1/books/{id}/content")).bearer_auth(tok).header(ACCEPT_ENCODING, "identity");
-            if have > 0 {
-                r = r.header(RANGE, format!("bytes={have}-"));
-                if let Some(v) = et.as_ref().or(lm.as_ref()) {
-                    r = r.header(IF_RANGE, v);
-                }
-            }
-            r
+            pp.ask(c.get(format!("{base}/api/v1/books/{id}/content")).bearer_auth(tok).header(ACCEPT_ENCODING, "identity"), have, &ask)
         })
         .await;
         let resp = match resp {
@@ -235,92 +212,39 @@ async fn run(app: &AppHandle, id: i64, stop: &AtomicBool) -> Outcome {
             Err(GErr::Offline(m)) => return Outcome::Waiting(m),
             Err(e) => return Outcome::Failed(e.to_string()),
         };
-        let status = resp.status();
-        let header = |h| resp.headers().get(h).and_then(|v: &reqwest::header::HeaderValue| v.to_str().ok()).map(String::from);
-        let new_lm = header(LAST_MODIFIED);
-        let new_et = header(ETAG);
-        let (mut file, mut written, total) = match status {
-            StatusCode::PARTIAL_CONTENT if have > 0 => {
-                // "bytes 4000-9999/10000"
-                let cr = header(CONTENT_RANGE).unwrap_or_default();
-                let start = cr.strip_prefix("bytes ").and_then(|r| r.split('-').next()).and_then(|x| x.trim().parse::<u64>().ok());
-                let len = cr.rsplit('/').next().and_then(|x| x.trim().parse::<u64>().ok());
-                let same_date = match (&info.last_modified, &new_lm) {
-                    (Some(a), Some(b)) => a == b,
-                    _ => true,
-                };
-                if start != Some(have) || len != Some(info.total) || !same_date {
-                    // another file on the server now: start over
-                    let _ = std::fs::remove_file(&part);
-                    continue;
-                }
-                match tokio::fs::OpenOptions::new().append(true).open(&part).await {
-                    Ok(f) => (f, have, info.total),
-                    Err(e) => return Outcome::Failed(format!("Couldn't write the book on this PC: {e}")),
-                }
-            }
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                let total = resp.content_length().unwrap_or(0);
-                let info = Info { total, last_modified: new_lm.clone(), etag: new_et.clone() };
-                let _ = std::fs::write(&info_p, serde_json::to_vec(&info).unwrap_or_default());
-                match tokio::fs::File::create(&part).await {
-                    Ok(f) => (f, 0, total),
-                    Err(e) => return Outcome::Failed(format!("Couldn't write the book on this PC: {e}")),
-                }
-            }
-            StatusCode::RANGE_NOT_SATISFIABLE => {
-                let _ = std::fs::remove_file(&part);
-                continue;
-            }
-            StatusCode::NOT_FOUND => return Outcome::Failed("Grimmory doesn't have this book's file any more.".into()),
-            s => {
+        let (file, written, total) = match resumable::begin(&p, &resp, have, &info).await {
+            resumable::Begin::Append(f, w, t) => (f, w, t),
+            resumable::Begin::Fresh(f, t) => (f, 0, t),
+            resumable::Begin::Restart => continue,
+            resumable::Begin::WriteFailed(e) => return Outcome::Failed(format!("Couldn't write the book on this PC: {e}")),
+            resumable::Begin::Status(StatusCode::NOT_FOUND) => return Outcome::Failed("Grimmory doesn't have this book's file any more.".into()),
+            resumable::Begin::Status(s) => {
                 let text = resp.text().await.unwrap_or_default();
                 let m = server_message(&text);
                 return Outcome::Failed(if m.is_empty() { format!("Grimmory answered {}.", s.as_u16()) } else { m });
             }
         };
-        let mut body = resp.bytes_stream();
-        let mut last = Instant::now();
-        loop {
-            if stop.load(Ordering::SeqCst) {
-                let _ = file.flush().await;
-                put(app, id, "paused", written, total, None);
+        let written = match resumable::stream(resp, file, written, total, stop, |w, t| put(app, id, "running", w, t, None)).await {
+            resumable::Streamed::Ended(w) => w,
+            resumable::Streamed::Stopped(w) => {
+                put(app, id, "paused", w, total, None);
                 return Outcome::Paused;
             }
-            match body.next().await {
-                Some(Ok(chunk)) => {
-                    if let Err(e) = file.write_all(&chunk).await {
-                        return Outcome::Failed(format!("Couldn't write the book on this PC: {e}"));
-                    }
-                    written += chunk.len() as u64;
-                    if last.elapsed() > Duration::from_millis(300) {
-                        last = Instant::now();
-                        put(app, id, "running", written, total, None);
-                    }
+            resumable::Streamed::Broke(e) => {
+                if is_connection(&e) {
+                    super::failed(app, GErr::Offline(e.to_string()));
+                    return Outcome::Waiting("The connection broke off.".into());
                 }
-                Some(Err(e)) => {
-                    let _ = file.flush().await;
-                    put(app, id, "running", written, total, None);
-                    if is_connection(&e) {
-                        super::failed(app, GErr::Offline(e.to_string()));
-                        return Outcome::Waiting("The connection broke off.".into());
-                    }
-                    return Outcome::Failed(e.to_string());
-                }
-                None => break,
+                return Outcome::Failed(e.to_string());
             }
-        }
-        let _ = file.flush().await;
-        drop(file);
+            resumable::Streamed::WriteFailed(e) => return Outcome::Failed(format!("Couldn't write the book on this PC: {e}")),
+        };
         if total > 0 && written < total {
             put(app, id, "waiting", written, total, None);
             return Outcome::Waiting("The connection broke off.".into());
         }
-        if total == 0 {
-            let info = Info { total: written, last_modified: new_lm, etag: new_et };
-            let _ = std::fs::write(&info_p, serde_json::to_vec(&info).unwrap_or_default());
-        }
-        return finish(app, id, &part, &gb.file_name);
+        resumable::settle(&p, written, total);
+        return finish(app, id, &p.part, &gb.file_name);
     }
     Outcome::Failed("Grimmory kept sending a different file. Try again in a moment.".into())
 }
