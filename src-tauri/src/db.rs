@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS list_books (
 );
 ";
 
-const SCHEMA_VERSION: i32 = 10;
+const SCHEMA_VERSION: i32 = 11;
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -267,6 +267,10 @@ impl Db {
         if version < 10 {
             // a reading status for books only on this PC (Grimmory books keep theirs on Grimmory), additive only
             conn.execute_batch("ALTER TABLE books ADD COLUMN read_status TEXT;")?;
+        }
+        if version < 11 {
+            // sync on this Wi-Fi: a phone's place per book and the paired devices, additive only
+            conn.execute_batch(crate::peer::pair::SCHEMA_V11)?;
         }
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))

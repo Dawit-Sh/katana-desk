@@ -12,6 +12,7 @@ mod lists;
 mod marks;
 mod meta;
 mod pages;
+mod peer;
 mod reads;
 mod resumable;
 mod search;
@@ -705,6 +706,8 @@ pub fn run() {
             }
             library::scan_in_background(handle.clone(), None);
             grimmory::start(&handle);
+            app.manage(peer::Peer::default());
+            peer::start_if_on(&handle);
             dict::start(&handle);
 
             if let Some(win) = app.get_webview_window("main") {
@@ -731,6 +734,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            peer::peer_status,
+            peer::peer_set_enabled,
+            peer::peer_pair_open,
+            peer::peer_pair_close,
+            peer::peer_forget,
             install_kind,
             get_library,
             get_book,

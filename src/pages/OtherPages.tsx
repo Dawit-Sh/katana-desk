@@ -11,6 +11,7 @@ import { fmtTime, fmtWhen, plural } from "../lib/format";
 import { useStore, type CoverSize, type ThemePref } from "../lib/store";
 import { addFolder } from "./LocalPage";
 import { DictCredits, DictSettings } from "./DictSettings";
+import { WifiSync } from "./WifiSync";
 import { dict } from "../lib/words";
 import { KeyList } from "../components/KeyMap";
 import { checkForUpdate, installUpdate, RELEASES, restartNow, useUpdates } from "../lib/updates";
@@ -563,7 +564,12 @@ export function SettingsPage() {
             <DictSettings />
           </>
         )}
-        {sec === "sync" && <SyncBackup />}
+        {sec === "sync" && (
+          <>
+            <WifiSync />
+            <SyncBackup />
+          </>
+        )}
         {sec === "keyboard" && (
           <>
             <div className="glab">Keyboard and mouse</div>

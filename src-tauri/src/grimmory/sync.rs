@@ -27,6 +27,26 @@ fn open_book() -> &'static Mutex<Option<i64>> {
     static B: OnceLock<Mutex<Option<i64>>> = OnceLock::new();
     B.get_or_init(Default::default)
 }
+/// Offers that came from a phone on this Wi-Fi (`peer`), not from Grimmory.
+fn peer_offers() -> &'static Mutex<std::collections::HashSet<i64>> {
+    static P: OnceLock<Mutex<std::collections::HashSet<i64>>> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
+/// The book open in the reader here.
+pub fn is_open(id: i64) -> bool {
+    *open_book().lock().unwrap() == Some(id)
+}
+
+/// A phone's place that wins but sits behind this PC's, or for a book open here: the reader asks, as it
+/// does for Grimmory's (its answer goes to `peer::answer`).
+pub fn offer_from_peer(app: &AppHandle, id: i64, p: ServerPlace) {
+    offers().lock().unwrap().insert(id, p);
+    peer_offers().lock().unwrap().insert(id);
+    if is_open(id) {
+        let _ = app.emit("grimmory-offer", id);
+    }
+}
 
 struct Linked {
     gid: i64,
@@ -244,11 +264,15 @@ fn apply(app: &AppHandle, id: i64, p: &ServerPlace, use_cfi: bool) {
 
 /// Unread here too: no place, not in Continue reading, not finished.
 pub fn clear(app: &AppHandle, id: i64) {
+    if peer_offers().lock().unwrap().remove(&id) {
+        offers().lock().unwrap().remove(&id);
+    }
     {
         let conn = conn_of(app);
         let _ = conn.execute(
             "UPDATE books SET location = NULL, fraction = NULL, chapter = NULL, opened_at = NULL, finished_at = NULL,
-                place_state = 'clean', server_place = NULL, synced_at = ?2, place_at = NULL WHERE id = ?1",
+                place_state = 'clean', server_place = NULL, synced_at = ?2, place_at = NULL,
+                peer_place = NULL, peer_served_at = NULL, peer_synced_at = ?2 WHERE id = ?1",
             params![id, db::now()],
         );
         let _ = conn.execute(
@@ -321,6 +345,10 @@ async fn post(app: &AppHandle, id: i64, l: &Linked) -> GRes<()> {
 /// Works out one book's place with Grimmory and does what the rules say.
 async fn reconcile(app: &AppHandle, id: i64, timeout: Option<Duration>) -> GRes<Option<Decision>> {
     let Some(l) = linked(app, id) else { return Ok(None) };
+    if peer_offers().lock().unwrap().contains(&id) {
+        // a phone's place is waiting for an answer here; Grimmory's is weighed after it
+        return Ok(None);
+    }
     if offers().lock().unwrap().contains_key(&id) && l.local.pending {
         // waiting for an answer: this PC's place doesn't go over Grimmory's meanwhile
         return Ok(None);
@@ -489,7 +517,10 @@ pub fn grimmory_offer(id: i64) -> Option<Offer> {
 #[tauri::command]
 pub async fn grimmory_answer(app: AppHandle, id: i64, go: bool) -> OpenPlace {
     let offered = offers().lock().unwrap().remove(&id);
-    if let Some(p) = offered {
+    let from_peer = peer_offers().lock().unwrap().remove(&id);
+    if let (Some(p), true) = (&offered, from_peer) {
+        crate::peer::answer(&app, id, p, go);
+    } else if let Some(p) = offered {
         if go {
             let use_cfi = p.cfi.is_some()
                 && linked(&app, id).and_then(|l| l.seen).map_or(true, |s| s.cfi != p.cfi);
@@ -515,7 +546,7 @@ pub async fn grimmory_answer(app: AppHandle, id: i64, go: bool) -> OpenPlace {
 /// Grimmory's newer place by itself (returned, for "Back to p. N"); otherwise it asks, as at the start.
 #[tauri::command]
 pub async fn grimmory_keep_up(app: AppHandle, id: i64, follow: bool) -> Option<OpenPlace> {
-    if !g(&app).signed_in() || *open_book().lock().unwrap() != Some(id) {
+    if !g(&app).signed_in() || *open_book().lock().unwrap() != Some(id) || peer_offers().lock().unwrap().contains(&id) {
         return None;
     }
     let pending = linked(&app, id)?.local.pending;
