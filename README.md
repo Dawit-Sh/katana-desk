@@ -4,7 +4,7 @@
 
 <p align="center">A book reader for your computer that keeps up with your <a href="https://github.com/grimmory-tools/grimmory">Grimmory</a> server.<br>The desktop version of <a href="https://github.com/Dawit-Sh/Katana">Katana</a> (刀). Windows and Linux.</p>
 
-<p align="center"><img src="docs/screenshots/library.jpg" alt="The library: a grid of book covers in a dark window, with the sidebar on the left"></p>
+<p align="center"><img src="docs/screenshots/library.jpg" alt="The library: a grid of book covers in a dark window. The sidebar has today's reading, the book being read, the reading days as a calendar and a word of the day"></p>
 
 ## What it does
 
@@ -24,7 +24,7 @@
     <td><img src="docs/screenshots/word-card.jpg" alt="The word card for 'disconsolately', with Wiktionary and WordNet tabs and the sentence from the book"></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/journal.jpg" alt="The Journal: a year of reading days, books this year and charts"></td>
+    <td><img src="docs/screenshots/journal.jpg" alt="The Journal: a year of reading days coloured by a daily goal, books this year and charts"></td>
     <td><img src="docs/screenshots/settings-paper.jpg" alt="Settings in the light Paper theme, showing the eight themes as little windows"></td>
   </tr>
 </table>
