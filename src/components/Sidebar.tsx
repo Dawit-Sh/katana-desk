@@ -378,7 +378,7 @@ export function Sidebar({ drawer, onPick }: { drawer?: boolean; onPick?: () => v
               }}
             />
             <div className="hfoot">
-              <span title="Change it in Settings › Reading defaults, or in the Journal">Goal {goal} min a day</span>
+              <span title={`Your goal: ${goal} min a day. Change it in Settings › Reading defaults, or in the Journal`}>Goal {goal} min</span>
               <HeatKey />
             </div>
           </div>
