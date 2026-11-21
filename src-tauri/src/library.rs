@@ -25,6 +25,37 @@ pub struct ScanState {
     pub total: usize,
 }
 
+/// Until 2026-11-21 the partial MD5's first sample was read at 256 instead of 0, so no hash here matched
+/// KOReader's, Grimmory's or Katana's. Once, in the background: every book whose file is here gets its
+/// hash again (a missing file keeps its old one until it's found).
+pub fn rehash_once(app: tauri::AppHandle) {
+    use tauri::Manager;
+    std::thread::spawn(move || {
+        let lib = app.state::<Library>();
+        if db::get_setting(&lib.db.0.lock().unwrap(), "library.md5v").ok().flatten().as_deref() == Some("2") {
+            return;
+        }
+        let rows: Vec<(i64, String)> = {
+            let conn = lib.db.0.lock().unwrap();
+            let mut st = match conn.prepare("SELECT id, path FROM books WHERE missing = 0") {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)));
+            rows.map(|r| r.flatten().collect()).unwrap_or_default()
+        };
+        let mut n = 0;
+        for (id, path) in rows {
+            if let Some(h) = meta::partial_md5(Path::new(&path)) {
+                let _ = lib.db.0.lock().unwrap().execute("UPDATE books SET hash = ?2 WHERE id = ?1", rusqlite::params![id, h]);
+                n += 1;
+            }
+        }
+        let _ = db::set_setting(&lib.db.0.lock().unwrap(), "library.md5v", "2");
+        eprintln!("katana: {n} books hashed again (partial MD5 from 0)");
+    });
+}
+
 pub struct Library {
     pub db: std::sync::Arc<Db>,
     pub covers_dir: PathBuf,

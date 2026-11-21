@@ -26,11 +26,12 @@ pub fn server_types(format: &str) -> &'static [&'static str] {
     }
 }
 
-/// The sample ranges KOReader's partial MD5 reads: 1 KB at 256 B, 1 KB, 4 KB ... 1 GB, within the file.
+/// The sample ranges KOReader's partial MD5 reads: 1 KB at 0, 1 KB, 4 KB ... 1 GB, within the file
+/// (the first is at 0: KOReader's shift by -2 wraps, see `meta::partial_md5`).
 pub fn sample_ranges(size: u64) -> Vec<(u64, u64)> {
     let mut out = vec![];
     for i in -1i32..=10 {
-        let offset: u64 = if i < 0 { 256 } else { 1024u64 << (2 * i) };
+        let offset: u64 = if i < 0 { 0 } else { 1024u64 << (2 * i) };
         if offset >= size {
             break;
         }
@@ -147,9 +148,10 @@ mod tests {
     #[test]
     fn samples_follow_koreader() {
         let r = sample_ranges(5000);
-        assert_eq!(r, vec![(256, 1279), (1024, 2047), (4096, 4999)]);
+        assert_eq!(r, vec![(0, 1023), (1024, 2047), (4096, 4999)]);
         assert_eq!(sample_ranges(2_000_000_000).len(), 12);
-        assert!(sample_ranges(100).is_empty());
+        assert_eq!(sample_ranges(100), vec![(0, 99)]);
+        assert!(sample_ranges(0).is_empty());
     }
 
     #[test]

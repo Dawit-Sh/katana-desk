@@ -704,6 +704,7 @@ pub fn run() {
             for (_, p) in &loose {
                 library::allow(&handle, &PathBuf::from(p), false);
             }
+            library::rehash_once(handle.clone());
             library::scan_in_background(handle.clone(), None);
             grimmory::start(&handle);
             app.manage(peer::Peer::default());

@@ -13,7 +13,7 @@ def partial_md5(path):
     m = hashlib.md5()
     with open(path, "rb") as f:
         for i in range(-1, 11):
-            f.seek(1024 << (2 * i) if i >= 0 else 256)
+            f.seek(1024 << (2 * i) if i >= 0 else 0)  # KOReader: the first sample is at 0
             b = f.read(1024)
             if not b:
                 break

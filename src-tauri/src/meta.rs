@@ -189,7 +189,9 @@ pub fn partial_md5(path: &Path) -> Option<String> {
     let mut hasher = Md5::new();
     let mut buf = vec![0u8; 1024];
     for i in -1i32..=10 {
-        let offset: u64 = if i < 0 { 1024 >> 2 } else { 1024u64 << (2 * i) };
+        // KOReader's `lshift(1024, 2 * i)`: for i = -1 the shift wraps (LuaJIT masks the count, as Java
+        // does in Grimmory) and the first sample is at 0, not 256
+        let offset: u64 = if i < 0 { 0 } else { 1024u64 << (2 * i) };
         if offset >= len {
             break;
         }
@@ -546,6 +548,42 @@ pub fn save_cover(bytes: &[u8], out: &Path) -> Option<()> {
     let mut f = File::create(out).ok()?;
     let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut f, 86);
     enc.encode_image(&rgb).ok()
+}
+
+#[cfg(test)]
+mod md5_tests {
+    use super::partial_md5;
+    use md5::{Digest, Md5};
+
+    #[test]
+    fn partial_md5_starts_at_0_like_koreader_grimmory_and_katana() {
+        let dir = std::env::temp_dir().join(format!("katana-pmd5-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("b.bin");
+        let data: Vec<u8> = (0..300_000u32).map(|i| (i * 13 % 251) as u8).collect();
+        std::fs::write(&p, &data).unwrap();
+        let mut h = Md5::new();
+        for off in [0usize, 1024, 4096, 16384, 65536, 262144] {
+            h.update(&data[off..(off + 1024).min(data.len())]);
+        }
+        assert_eq!(partial_md5(&p), Some(format!("{:x}", h.finalize())));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_sync_test_books_hash_as_katana_does() {
+        // the files the Katana chat put on this PC for the local sync test (skipped where they aren't)
+        let dir = std::path::Path::new(r"C:\Users\Dave\Documents\KatanaSyncTest");
+        for (name, want) in [
+            ("sync-test-novel.epub", "1c406e37cf164d205680c949acecc9ed"),
+            ("sync-test-pages.pdf", "f36588b27a1227337da17558bcc3f091"),
+        ] {
+            let p = dir.join(name);
+            if p.exists() {
+                assert_eq!(partial_md5(&p).as_deref(), Some(want), "{name}");
+            }
+        }
+    }
 }
 
 #[cfg(test)]
