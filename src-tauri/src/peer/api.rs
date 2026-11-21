@@ -246,6 +246,26 @@ fn status_of(b: &BookRow, has_place: bool) -> String {
     }
 }
 
+/// The book's last read time: its place's, or the day it was finished when that's later.
+pub fn last_read(place_at: Option<i64>, finished_at: Option<i64>) -> Option<i64> {
+    match (place_at, finished_at) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// A progress request's `dateFinished`: `Some(Some(ms))` finished then (a time more than a day ahead,
+/// or one that can't be read, counts as now), `Some(None)` no longer finished (null), `None` not said.
+pub fn finished_in(v: &Value, now: i64) -> Option<Option<i64>> {
+    match v.get("dateFinished")? {
+        Value::Null => Some(None),
+        x => {
+            let t = crate::grimmory::place::parse_time(x).and_then(|t| t.trusted(now)).unwrap_or(now);
+            Some(Some(t))
+        }
+    }
+}
+
 fn get_book(app: &AppHandle, id: i64) -> Reply {
     let Some(b) = book_row(app, id) else { return fail(404, "No such book") };
     let served = pp::served(&b.desk, b.peer.as_ref());
@@ -266,7 +286,7 @@ fn get_book(app: &AppHandle, id: i64) -> Reply {
         "title": b.title,
         "fileSizeKb": kb,
         "readStatus": status,
-        "lastReadTime": served.as_ref().and_then(|s| s.at).and_then(iso),
+        "lastReadTime": last_read(served.as_ref().and_then(|s| s.at), if status == "READ" { b.finished_at } else { None }).and_then(iso),
         "metadata": { "title": b.title, "authors": authors },
         "primaryFile": {
             "id": b.id,
@@ -331,6 +351,42 @@ fn progress(app: &AppHandle, v: &Value) -> Reply {
             // a Local book read on a phone is being read
             let _ = conn.execute("UPDATE books SET read_status = 'READING' WHERE id = ?1 AND (read_status IS NULL OR read_status = 'UNREAD')", [id]);
         }
+    }
+    // finished on the phone (its dateFinished, or the end reached): Read here, with the day; a null
+    // dateFinished (read again) makes it unfinished
+    let finished = finished_in(v, now).or_else(|| (incoming.fraction.unwrap_or(0.0) >= 0.995).then_some(Some(now)));
+    match finished {
+        Some(Some(t)) => {
+            let conn = conn_of(app);
+            let was_read = b.read_status.as_deref() == Some("READ");
+            let _ = conn.execute(
+                "UPDATE books SET finished_at = CASE WHEN ?3 THEN COALESCE(finished_at, ?2) ELSE ?2 END WHERE id = ?1",
+                params![id, t, was_read],
+            );
+            match b.grimmory_id {
+                None => {
+                    let _ = conn.execute("UPDATE books SET read_status = 'READ' WHERE id = ?1", [id]);
+                }
+                Some(gid) => {
+                    let _ = conn.execute("UPDATE gbooks SET read_status = 'READ' WHERE id = ?1", [gid]);
+                }
+            }
+            drop(conn);
+            if let Some(gid) = b.grimmory_id.filter(|_| !was_read && crate::grimmory::g(app).signed_in()) {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = sync::grimmory_set_status(app, gid, "READ".into()).await;
+                });
+            }
+        }
+        Some(None) => {
+            let conn = conn_of(app);
+            let _ = conn.execute("UPDATE books SET finished_at = NULL WHERE id = ?1", [id]);
+            if b.grimmory_id.is_none() {
+                let _ = conn.execute("UPDATE books SET read_status = 'READING' WHERE id = ?1 AND read_status = 'READ'", [id]);
+            }
+        }
+        None => {}
     }
     let open = sync::is_open(id);
     match d {
@@ -407,12 +463,12 @@ fn set_status(app: &AppHandle, v: &Value) -> Reply {
             match b.grimmory_id {
                 Some(gid) => {
                     let _ = conn.execute("UPDATE gbooks SET read_status = ?2 WHERE id = ?1", params![gid, status]);
+                    if status == "READ" {
+                        let _ = crate::reads::mark_finished(&conn, id, b.read_status.as_deref() == Some("READ"));
+                    }
                 }
                 None => {
-                    let _ = conn.execute("UPDATE books SET read_status = ?2 WHERE id = ?1", params![id, status]);
-                    if status == "RE_READING" {
-                        let _ = crate::reads::start(&conn, id);
-                    }
+                    let _ = crate::reads::set_local_status(&conn, id, &status);
                 }
             }
         }
@@ -772,6 +828,41 @@ mod tests {
         assert_eq!(match_one(&conn, "99", 500, "pdf"), Some(8));
         // a file that went missing isn't there to sync
         assert_eq!(match_one(&conn, "77", 500, "pdf"), None);
+    }
+
+    #[test]
+    fn finished_books_carry_their_day() {
+        assert_eq!(finished_in(&json!({ "dateFinished": "2026-11-20T09:49:50Z" }), NOW), Some(Some(1_795_168_190_000)));
+        assert_eq!(finished_in(&json!({ "dateFinished": null }), NOW), Some(None));
+        assert_eq!(finished_in(&json!({ "bookId": 2 }), NOW), None);
+        // a day a week ahead counts as now
+        assert_eq!(finished_in(&json!({ "dateFinished": "2027-06-01T00:00:00Z" }), 1_795_168_190_000), Some(Some(1_795_168_190_000)));
+        assert_eq!(last_read(None, Some(5)), Some(5));
+        assert_eq!(last_read(Some(9), Some(5)), Some(9));
+        assert_eq!(last_read(None, None), None);
+    }
+
+    #[test]
+    fn a_status_of_read_sets_the_finished_day_once() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE books (id INTEGER PRIMARY KEY, read_status TEXT, finished_at INTEGER);
+             INSERT INTO books (id) VALUES (2);",
+        )
+        .unwrap();
+        crate::reads::set_local_status(&conn, 2, "READ").unwrap();
+        let first: Option<i64> = conn.query_row("SELECT finished_at FROM books WHERE id = 2", [], |r| r.get(0)).unwrap();
+        assert!(first.is_some());
+        // Read again: the day stays
+        conn.execute("UPDATE books SET finished_at = 5 WHERE id = 2", []).unwrap();
+        crate::reads::set_local_status(&conn, 2, "READ").unwrap();
+        let again: i64 = conn.query_row("SELECT finished_at FROM books WHERE id = 2", [], |r| r.get(0)).unwrap();
+        assert_eq!(again, 5);
+        // Reading, then Read: a new day
+        crate::reads::set_local_status(&conn, 2, "READING").unwrap();
+        crate::reads::set_local_status(&conn, 2, "READ").unwrap();
+        let later: i64 = conn.query_row("SELECT finished_at FROM books WHERE id = 2", [], |r| r.get(0)).unwrap();
+        assert!(later > 5);
     }
 
     #[test]

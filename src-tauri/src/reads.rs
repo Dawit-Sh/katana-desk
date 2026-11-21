@@ -81,6 +81,31 @@ pub fn reads(conn: &Connection, book_id: i64) -> rusqlite::Result<Reads> {
     Ok(Reads { current: cur, reads, hl, bm })
 }
 
+/// The day a book was finished, as Grimmory keeps `dateFinished`: set when its status becomes Read (a
+/// book that was already Read keeps its day), and served with that status.
+pub fn mark_finished(conn: &Connection, id: i64, was_read: bool) -> rusqlite::Result<()> {
+    let now = crate::db::now();
+    if was_read {
+        conn.execute("UPDATE books SET finished_at = COALESCE(finished_at, ?2) WHERE id = ?1", params![id, now])?;
+    } else {
+        conn.execute("UPDATE books SET finished_at = ?2 WHERE id = ?1", params![id, now])?;
+    }
+    Ok(())
+}
+
+/// A Local book's status here (Re-reading starts a new read, Read sets the day it was finished).
+pub fn set_local_status(conn: &Connection, id: i64, status: &str) -> rusqlite::Result<()> {
+    let before: Option<String> = conn.query_row("SELECT read_status FROM books WHERE id = ?1", [id], |r| r.get(0)).ok().flatten();
+    conn.execute("UPDATE books SET read_status = ?2 WHERE id = ?1", params![id, status])?;
+    if status == "READ" {
+        mark_finished(conn, id, before.as_deref() == Some("READ"))?;
+    }
+    if status == "RE_READING" {
+        start(conn, id)?;
+    }
+    Ok(())
+}
+
 /// Starts the next read: marks made from now on belong to it. A read with no marks yet is kept as it
 /// is (asking twice doesn't make empty reads).
 pub fn start(conn: &Connection, book_id: i64) -> rusqlite::Result<i64> {
@@ -136,10 +161,7 @@ pub fn book_set_status(app: tauri::AppHandle, lib: State<Library>, id: i64, stat
     }
     {
         let conn = lib.db.0.lock().unwrap();
-        conn.execute("UPDATE books SET read_status = ?2 WHERE id = ?1", params![id, status]).map_err(|e| e.to_string())?;
-        if status == "RE_READING" {
-            start(&conn, id).map_err(|e| e.to_string())?;
-        }
+        set_local_status(&conn, id, &status).map_err(|e| e.to_string())?;
     }
     if status == "UNREAD" {
         crate::grimmory::sync::clear(&app, id);

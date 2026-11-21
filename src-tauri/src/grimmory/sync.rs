@@ -596,12 +596,23 @@ pub async fn grimmory_set_status(app: AppHandle, gid: i64, status: String) -> Re
     if !STATUSES.contains(&status.as_str()) {
         return Err(format!("{status} isn't a reading status"));
     }
+    let was_read = conn_of(&app)
+        .query_row("SELECT read_status = 'READ' FROM gbooks WHERE id = ?1", [gid], |r| r.get::<_, Option<bool>>(0))
+        .ok()
+        .flatten()
+        .unwrap_or(false);
     let body = serde_json::json!({ "bookIds": [gid], "status": status });
     let resp = send(&app, move |c, base, tok| c.post(format!("{base}/api/v1/books/status")).bearer_auth(tok).json(&body))
         .await
         .map_err(String::from)?;
     let now_status = status_answer(resp, &status).await.map_err(String::from)?;
     let _ = conn_of(&app).execute("UPDATE gbooks SET read_status = ?2 WHERE id = ?1", params![gid, now_status]);
+    if now_status == "READ" {
+        // the day it was finished, for the copies here (a phone on this Wi-Fi reads it as dateFinished)
+        for id in local_ids(&app, gid) {
+            let _ = crate::reads::mark_finished(&conn_of(&app), id, was_read);
+        }
+    }
     if now_status == "UNREAD" {
         for id in local_ids(&app, gid) {
             clear(&app, id);
