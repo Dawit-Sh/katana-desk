@@ -225,13 +225,8 @@ function WordCard({ wod, meaning, onReview }: { wod: ReturnType<typeof useWordOf
           <i className="ms">style</i>Review
         </button>
         <button type="button" className="pill" disabled={wod.known} onClick={() => wod.know()} title="Counts as a good review">
-          {wod.known ? (
-            <>
-              <i className="ms">check</i>Known
-            </>
-          ) : (
-            "I know it"
-          )}
+          {/* no icon: Review + this + → must fit the card's 198 px */}
+          {wod.known ? "Known" : "I know it"}
         </button>
         {wod.count > 1 && (
           <button type="button" className="pill sq" aria-label="Another word" title="Another word" onClick={wod.another}>
