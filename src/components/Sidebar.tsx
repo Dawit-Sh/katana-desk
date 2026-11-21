@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useUpdates } from "../lib/updates";
-import { api, type ReadingDays } from "../lib/api";
+import { api, m7, type ReadingDays } from "../lib/api";
+import { HeatKey, heatLevel } from "../lib/heat";
+import { Cover } from "./Cover";
+import "../styles/reading-card.css";
 import { useStore, type Page } from "../lib/store";
 
 type Item = { page: Page; icon: string; label: string; count?: number; badge?: string };
@@ -20,27 +23,56 @@ export function streakOf(secs: Map<string, number>, today: Date) {
   return streak;
 }
 
-/** Streak, minutes this week (from Monday) and the last 28 days, from the reading time the reader records. */
+/** Minutes as "45 min", or hours once past an hour and a half ("2.5 h"). */
+const minOrH = (secs: number): [string, string] => {
+  const m = Math.round(secs / 60);
+  if (m < 90) return [String(m), "min"];
+  const h = secs / 3600;
+  return [h < 10 ? h.toFixed(1).replace(/\.0$/, "") : String(Math.round(h)), "h"];
+};
+
+/** The longest run of days read in a row, in what's kept (about 400 days). */
+function bestStreak(secs: Map<string, number>) {
+  const days = [...secs.entries()].filter(([, s]) => s > 0).map(([d]) => d).sort();
+  let best = 0;
+  let run = 0;
+  let prev: Date | null = null;
+  for (const k of days) {
+    const d = new Date(`${k}T12:00:00`);
+    run = prev && Math.round((d.getTime() - prev.getTime()) / 86_400_000) === 1 ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+  return best;
+}
+
+/** Streaks, today, this week and the last 12 weeks as a calendar (a column a week, Monday on top). */
 function stats(rd: ReadingDays | null) {
   const secs = new Map(rd?.days ?? []);
   const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const start = new Date(monday);
+  start.setDate(monday.getDate() - 7 * 11);
   const cells: { cls: string; title: string }[] = [];
-  for (let i = 27; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
-    const s = secs.get(dayKey(d)) ?? 0;
+  for (let i = 0; i < 84; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const k = dayKey(d);
+    if (d > today) {
+      cells.push({ cls: "fut", title: "" });
+      continue;
+    }
+    const s = secs.get(k) ?? 0;
     const m = Math.round(s / 60);
     cells.push({
-      cls: (s <= 0 ? "" : m < 10 ? "a" : m < 30 ? "b" : "c") + (i === 0 ? " today" : ""),
+      cls: `l${heatLevel(s)}${k === dayKey(today) ? " today" : ""}`,
       title: `${d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}: ${m ? `${m} min` : "no reading"}`,
     });
   }
-  const streak = streakOf(secs, today);
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
   let week = 0;
   for (const m = new Date(monday); m <= today; m.setDate(m.getDate() + 1)) week += secs.get(dayKey(m)) ?? 0;
-  return { cells, streak, weekMin: Math.round(week / 60) };
+  return { cells, streak: streakOf(secs, today), best: bestStreak(secs), today: secs.get(dayKey(today)) ?? 0, week };
 }
 
 export function useReadingDays() {
@@ -52,20 +84,82 @@ export function useReadingDays() {
   return rd;
 }
 
+/** This year's numbers from the Journal: hours read, days read, books finished (looked at when the reader closes). */
+function useYear() {
+  const readingId = useStore((s) => s.readingId);
+  const [y, setY] = useState<{ secs: number; days: number; finished: number } | null>(null);
+  useEffect(() => {
+    if (readingId != null) return;
+    m7.journal("year")
+      .then((j) => {
+        const year = String(new Date().getFullYear());
+        const days = j.days.filter(([d, s]) => d.startsWith(year) && s > 0).length;
+        setY({ secs: j.yearSeconds, days, finished: j.finishedYear });
+      })
+      .catch(() => {});
+  }, [readingId]);
+  return y;
+}
+
 function ReadingCard() {
   const go = useStore((s) => s.go);
-  const { cells, streak, weekMin } = stats(useReadingDays());
+  const open = useStore((s) => s.open);
+  const books = useStore((s) => s.books);
+  const { cells, streak, best, today, week } = stats(useReadingDays());
+  const year = useYear();
+  // the book you're reading now: the last one opened that's started and not finished
+  const now = useMemo(
+    () =>
+      books
+        .filter((b) => b.openedAt && (b.fraction ?? 0) > 0.004 && (b.fraction ?? 0) < 0.995)
+        .sort((a, b) => (b.openedAt ?? 0) - (a.openedAt ?? 0))[0] ?? null,
+    [books],
+  );
+  const [tv, tu] = minOrH(today);
+  const [wv, wu] = minOrH(week);
+  const [yv, yu] = minOrH(year?.secs ?? 0);
+  const pct = now ? Math.round((now.fraction ?? 0) * 100) : 0;
   return (
-    <button type="button" className="rc" onClick={() => go("journal")} title="Your reading days (Journal)">
-      <div className="rch"><span>Reading</span><span className="dim">Journal ›</span></div>
-      <div className="rcs">
-        <div><b>{streak}</b>{streak === 1 ? "day" : "days"}<small>Streak</small></div>
-        <div><b>{weekMin}</b>min<small>This week</small></div>
-      </div>
-      <div className="heat" aria-hidden="true">
-        {cells.map((c, i) => <i key={i} className={c.cls} title={c.title} />)}
-      </div>
-    </button>
+    <div className="rc">
+      <button type="button" className="rch" onClick={() => go("journal")} title="Your reading days (Journal)">
+        <span>Reading</span>
+        <span className="dim">Journal ›</span>
+      </button>
+      {now && (
+        <button type="button" className="rnow" onClick={() => open(now.id)} title={`Continue ${now.title}`}>
+          <Cover book={now} size="xs" progress={false} />
+          <span className="rnt">
+            <b>{now.title}</b>
+            <small>{now.chapter?.trim() ? `${pct}% · ${now.chapter.trim()}` : `${pct}%${now.author ? ` · ${now.author}` : ""}`}</small>
+            <span className="pbar">
+              <i style={{ width: `${pct}%` }} />
+            </span>
+          </span>
+        </button>
+      )}
+      <button type="button" className="rcbody" onClick={() => go("journal")} title="Your reading days (Journal)">
+        <span className="rcs">
+          <span><b>{streak}</b>{streak === 1 ? "day" : "days"}<small>Streak</small></span>
+          <span><b>{best}</b>{best === 1 ? "day" : "days"}<small>Best streak</small></span>
+          <span><b>{tv}</b>{tu}<small>Today</small></span>
+          <span><b>{wv}</b>{wu}<small>This week</small></span>
+        </span>
+        <span className="heat12" aria-hidden="true">
+          {cells.map((c, i) => <i key={i} className={c.cls} title={c.title} />)}
+        </span>
+        <span className="rcfoot">
+          <span>12 weeks</span>
+          <HeatKey />
+        </span>
+        {year && (
+          <span className="rcyear">
+            <span><b>{yv}</b>{yu}<small>This year</small></span>
+            <span><b>{year.days}</b><small>{year.days === 1 ? "Day read" : "Days read"}</small></span>
+            <span><b>{year.finished}</b><small>Finished</small></span>
+          </span>
+        )}
+      </button>
+    </div>
   );
 }
 

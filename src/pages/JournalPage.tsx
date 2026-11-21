@@ -3,6 +3,8 @@
 // an hour) and the learning column (your words, going back to your highlights, when you read).
 // Every number comes from the reader's own 15-second ticks (EPUB and the page view alike).
 import { useEffect, useMemo, useState } from "react";
+import { HeatKey, heatLevel } from "../lib/heat";
+import "../styles/reading-card.css";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -47,10 +49,8 @@ const big = (secs: number): [string, string] => {
   return [h < 10 ? h.toFixed(1).replace(/\.0$/, "") : String(Math.round(h)), "h"];
 };
 
-const level = (secs: number) => {
-  const m = secs / 60;
-  return m <= 0 ? 0 : m < 10 ? 1 : m < 30 ? 2 : m < 60 ? 3 : 4;
-};
+/** The same five steps as the sidebar's Reading card (lib/heat). */
+const level = heatLevel;
 
 /** The calendar year as 7-row columns, Monday on top, with a cell per day. */
 function YearGrid({ j }: { j: Journal }) {
@@ -235,9 +235,12 @@ export function JournalPage() {
           <div><b>{j.finishedYear}</b><span>{j.finishedYear === 1 ? "Book finished" : "Books finished"}</span></div>
         </div>
         <div>
-          <div className="jr-lbl">
-            Reading days
-            {best && best[1] > 0 && ` · best day ${parse(best[0]).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}, ${hm(best[1])}`}
+          <div className="jr-lbl jr-daylbl">
+            <span>
+              Reading days
+              {best && best[1] > 0 && ` · best day ${parse(best[0]).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}, ${hm(best[1])}`}
+            </span>
+            <HeatKey />
           </div>
           <YearGrid j={j} />
         </div>

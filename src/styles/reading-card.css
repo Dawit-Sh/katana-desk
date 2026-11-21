@@ -1,0 +1,68 @@
+/* Reading days: one scale in five steps (lib/heat.tsx), in the theme's accent green, lighter to stronger.
+   Used by the sidebar's Reading card and the Journal's year. */
+:root {
+  --hm0: color-mix(in srgb, var(--k-outv) 34%, transparent);
+  --hm1: color-mix(in srgb, var(--k-tint) 30%, transparent);
+  --hm2: color-mix(in srgb, var(--k-tint) 55%, transparent);
+  --hm3: color-mix(in srgb, var(--k-tint) 80%, transparent);
+  --hm4: var(--k-tint);
+}
+.l0 { background: var(--hm0) }
+.l1 { background: var(--hm1) }
+.l2 { background: var(--hm2) }
+.l3 { background: var(--hm3) }
+.l4 { background: var(--hm4) }
+
+/* the key: Less ▢▢▢▢▢ More */
+.hmkey { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--k-var); font-weight: 500; white-space: nowrap }
+.hmkey i { width: 10px; height: 10px; border-radius: 2px; display: inline-block }
+.hmkey i:first-of-type { margin-left: 3px }
+.hmkey i:last-of-type { margin-right: 3px }
+
+/* the sidebar's Reading card */
+.rc { padding: 14px 12px 12px; gap: 12px; cursor: default; text-align: left }
+.rc:hover { background: var(--k-sc) }
+.rc > button { width: 100%; text-align: left; border-radius: 12px }
+.rc .rch { display: flex; justify-content: space-between; align-items: center; padding: 0 2px }
+.rc .rch:hover .dim { color: var(--k-on) }
+.rnow { display: flex; gap: 10px; align-items: center; padding: 6px; margin: -2px -4px; width: calc(100% + 8px) !important }
+.rnow:hover, .rcbody:hover { background: var(--k-sch) }
+.rnow .cv.xs { width: 34px; height: 51px; flex: none }
+.rnt { display: grid; gap: 3px; min-width: 0; flex: 1 }
+.rnt b { font: 500 14px var(--font-book); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.rnt small { font-size: 11.5px; color: var(--k-var); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.rnt .pbar { margin-top: 2px; height: 3px }
+.rcbody { display: grid; gap: 12px; padding: 6px; margin: -6px; width: calc(100% + 12px) !important }
+.rc .rcs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 6px; font-size: 12px }
+.rc .rcs > span { display: block }
+.heat12 { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px }
+.heat12 i { display: block; aspect-ratio: 1; border-radius: 3px }
+.heat12 i.fut { visibility: hidden }
+.heat12 i.today { outline: 1.5px solid var(--k-on); outline-offset: 1px }
+.rcfoot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11.5px; color: var(--k-var); white-space: nowrap }
+.rcyear { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--k-outv) 55%, transparent); font-size: 12px }
+.rcyear > span { display: block }
+.rcyear b { font-size: 17px; font-weight: 600; margin-right: 2px; font-variant-numeric: tabular-nums }
+.rcyear small { display: block; color: var(--k-var); font-size: 11px }
+/* a tall window: the reading list sits a little lower and roomier, less open space above Settings */
+@media (min-height: 960px) {
+  .side > .sl:not(:first-child) { margin-top: 14px }
+  .side .nv { height: 44px }
+}
+/* a short window: this year's row, then the book row, go, so the sidebar still fits */
+@media (max-height: 900px) { .rcyear { display: none } }
+@media (max-height: 820px) { .rnow { display: none } }
+/* shorter still: just the streak and this week, and flatter days */
+@media (max-height: 760px) {
+  .rc .rcs > span:nth-child(2), .rc .rcs > span:nth-child(3) { display: none }
+  .heat12 i { aspect-ratio: auto; height: 9px; border-radius: 2px }
+}
+
+/* the Journal's year in the same scale */
+.jr-yr i.l0 { background: var(--hm0); opacity: 1 }
+.jr-yr i.l1 { background: var(--hm1); opacity: 1 }
+.jr-yr i.l2 { background: var(--hm2); opacity: 1 }
+.jr-yr i.l3 { background: var(--hm3); opacity: 1 }
+.jr-yr i.l4 { background: var(--hm4); opacity: 1 }
+.jr-yr i.fut { background: var(--hm0); opacity: .35 }
+.jr-daylbl { display: flex; justify-content: space-between; align-items: center; gap: 12px; max-width: 1240px; flex-wrap: wrap }
