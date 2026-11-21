@@ -259,6 +259,9 @@ fn get_book(app: &AppHandle, id: i64) -> Reply {
         .unwrap_or_default();
     let mut v = json!({
         "id": b.id,
+        // Katana drops a book answer without a library (`toCatalogEntry`): this PC's books are one library
+        "libraryId": 1,
+        "libraryName": "Katana Desk",
         "bookType": book_type(&b.format),
         "title": b.title,
         "fileSizeKb": kb,
@@ -342,6 +345,18 @@ fn progress(app: &AppHandle, v: &Value) -> Reply {
     }
     let _ = app.emit("library-changed", ());
     done()
+}
+
+/// A book opens here: a phone's place that came in while it was closed and still waits (a restart loses
+/// the question) is asked about again; a book with no place here simply takes it.
+pub fn offer_if_waiting(app: &AppHandle, id: i64) {
+    let Some(b) = book_row(app, id) else { return };
+    let Some(p) = b.peer.as_ref().filter(|p| p.has_place()) else { return };
+    if !b.desk.has_place() && pp::served(&b.desk, Some(p)).map_or(false, |s| s.from_peer) {
+        take_place(app, id, &p.server());
+    } else if pp::waiting(&b.desk, p) {
+        sync::offer_from_peer(app, id, p.server());
+    }
 }
 
 /// This PC takes a phone's place (a book linked to Grimmory then sends it up by its own sync).

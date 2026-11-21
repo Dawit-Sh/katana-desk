@@ -502,6 +502,10 @@ pub async fn grimmory_open_place(app: AppHandle, id: i64) -> OpenPlace {
         }
         let _ = reconcile(&app, id, Some(Duration::from_secs(4))).await;
     }
+    if !offers().lock().unwrap().contains_key(&id) {
+        // a phone's place on this Wi-Fi that still waits for an answer
+        crate::peer::api::offer_if_waiting(&app, id);
+    }
     *open_book().lock().unwrap() = Some(id);
     let (location, fraction, gid) = place_of(&app, id);
     OpenPlace { location, fraction, offer: offer_of(id), grimmory_id: gid }

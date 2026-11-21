@@ -109,6 +109,18 @@ pub fn served(desk: &DeskPlace, peer: Option<&PeerPlace>) -> Option<Served> {
     })
 }
 
+/// A phone's place still waiting for an answer here (the question lives in memory, so a restart loses
+/// it): it's what phones see, being newer than this PC's, and this PC isn't there.
+pub fn waiting(desk: &DeskPlace, peer: &PeerPlace) -> bool {
+    let Some(s) = served(desk, Some(peer)) else { return false };
+    if !s.from_peer || !desk.has_place() {
+        return false;
+    }
+    let same_cfi = matches!((&desk.location, &peer.cfi), (Some(a), Some(b)) if a == b);
+    let close = matches!((desk.fraction, peer.fraction), (Some(a), Some(b)) if (a - b).abs() < 0.001);
+    !(same_cfi || (peer.cfi.is_none() && close))
+}
+
 /// What to do with a place a phone just sent.
 pub fn weigh(desk: &DeskPlace, incoming: &PeerPlace, last: Option<&PeerPlace>, now: i64) -> Decision {
     let seen = last.map(|p| Seen { cfi: p.cfi.clone(), fraction: p.fraction });
@@ -169,6 +181,22 @@ mod tests {
     fn the_same_place_again_is_not_news() {
         let d = desk("c", 0.3, NOW - 60 * MIN, Some(NOW - 50 * MIN));
         assert_eq!(weigh(&d, &phone("c", 0.3, NOW), None, NOW), Decision::Keep);
+    }
+
+    #[test]
+    fn a_phone_place_waits_for_an_answer_until_taken_or_turned_down() {
+        let mut d = desk("c", 0.62, NOW - 10 * MIN, None);
+        let p = PeerPlace { cfi: None, href: Some("ch2".into()), fraction: Some(0.125), page: None, at: NOW - MIN };
+        assert!(waiting(&d, &p));
+        // "stay": this PC's place is chosen after the phone's landed
+        d.served_at = Some(NOW);
+        assert!(!waiting(&d, &p));
+        // "go": this PC is where the phone is
+        let d = DeskPlace { location: None, fraction: Some(0.125), place_at: Some(NOW), ..desk("x", 0.0, NOW, None) };
+        assert!(!waiting(&d, &PeerPlace { at: NOW + 1, ..p.clone() }));
+        // read on here since: nothing waits
+        let d = desk("d", 0.7, NOW, None);
+        assert!(!waiting(&d, &p));
     }
 
     #[test]

@@ -83,7 +83,7 @@ def main():
 
     d.call("POST", "/api/v1/books/reset-progress?type=BOOKLORE", [bid])  # start unread
     st, b = d.call("GET", f"/api/v1/books/{bid}")
-    check("book", st == 200 and b["id"] == bid, json.dumps(b)[:300])
+    check("book (with the libraryId Katana needs)", st == 200 and b["id"] == bid and b.get("libraryId") is not None and (b.get("primaryFile") or {}).get("id"), json.dumps(b)[:300])
     file_id = (b.get("primaryFile") or {}).get("id")
     epub = fmt == "EPUB"
 
