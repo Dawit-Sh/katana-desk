@@ -13,6 +13,7 @@ import { addFolder } from "./LocalPage";
 import { DictCredits, DictSettings } from "./DictSettings";
 import { WifiSync } from "./WifiSync";
 import { dict } from "../lib/words";
+import { GOALS, HeatKey, useGoal } from "../lib/heat";
 import { KeyList } from "../components/KeyMap";
 import { checkForUpdate, installUpdate, RELEASES, restartNow, useUpdates } from "../lib/updates";
 import { AaPanel } from "../reader/AaPanel";
@@ -22,7 +23,7 @@ type Section = "general" | "appearance" | "reading" | "sources" | "dictionaries"
 const SECTIONS: { id: Section; icon: string; name: string; about: string }[] = [
   { id: "general", icon: "tune", name: "General", about: "How Katana Desk starts, and how big everything is." },
   { id: "appearance", icon: "palette", name: "Appearance", about: "Themes, cover sizes and the glass behind the sidebar." },
-  { id: "reading", icon: "menu_book", name: "Reading defaults", about: "How a book looks when it has no settings of its own." },
+  { id: "reading", icon: "menu_book", name: "Reading defaults", about: "Your daily goal, and how a book looks when it has no settings of its own." },
   { id: "sources", icon: "cloud", name: "Sources", about: "Your Grimmory server and the folders on this PC." },
   { id: "dictionaries", icon: "dictionary", name: "Dictionaries", about: "The built-in offline dictionaries and your own StarDict files." },
   { id: "sync", icon: "sync", name: "Sync and backup", about: "What goes to Grimmory, and copies of your library and marks." },
@@ -251,6 +252,33 @@ function Appearance() {
               setGlassMsg(!glass && !on ? "Mica isn't available here (it needs Windows 11), so the sidebar stays plain." : "");
             }}
           />
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** The daily reading goal the reading days are coloured by (the sidebar's calendar and the Journal). */
+function DailyGoal() {
+  const { goal, setGoal } = useGoal();
+  return (
+    <>
+      <div className="glab">Daily goal</div>
+      <div className="grp">
+        <div className="srow">
+          <div className="tx">
+            <b>Minutes a day</b>
+            <small>
+              The reading days are coloured by it: none, under half, under the goal, the goal met, twice the goal or more <HeatKey />
+            </small>
+          </div>
+          <div className="seg" role="radiogroup" aria-label="Daily goal">
+            {GOALS.map((g) => (
+              <button type="button" key={g} role="radio" aria-checked={goal === g} className={goal === g ? "on" : ""} onClick={() => setGoal(g)}>
+                {g}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </>
@@ -525,7 +553,12 @@ function About() {
 }
 
 export function SettingsPage() {
-  const [sec, setSec] = useState<Section>(() => (useUpdates.getState().phase === "found" ? "about" : "general"));
+  const at = useStore((s) => s.settingsAt) as Section | null;
+  const [sec, setSec] = useState<Section>(() => (at && SECTIONS.some((x) => x.id === at) ? at : useUpdates.getState().phase === "found" ? "about" : "general"));
+  // Add a server in the sidebar while Settings is open
+  useEffect(() => {
+    if (at && SECTIONS.some((x) => x.id === at)) setSec(at);
+  }, [at]);
   const here = SECTIONS.find((x) => x.id === sec) ?? SECTIONS[0];
   return (
     <div className="setp">
@@ -549,7 +582,12 @@ export function SettingsPage() {
         </header>
         {sec === "general" && <General />}
         {sec === "appearance" && <Appearance />}
-        {sec === "reading" && <ReadingDefaults />}
+        {sec === "reading" && (
+          <>
+            <DailyGoal />
+            <ReadingDefaults />
+          </>
+        )}
         {sec === "sources" && (
           <>
             <div className="glab">Grimmory</div>

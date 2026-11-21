@@ -3,7 +3,7 @@
 // an hour) and the learning column (your words, going back to your highlights, when you read).
 // Every number comes from the reader's own 15-second ticks (EPUB and the page view alike).
 import { useEffect, useMemo, useState } from "react";
-import { HeatKey, heatLevel } from "../lib/heat";
+import { DayTip, GOALS, HeatKey, dayName, dayTime, goalNote, heatLevel, useGoal } from "../lib/heat";
 import "../styles/reading-card.css";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -49,38 +49,89 @@ const big = (secs: number): [string, string] => {
   return [h < 10 ? h.toFixed(1).replace(/\.0$/, "") : String(Math.round(h)), "h"];
 };
 
-/** The same five steps as the sidebar's Reading card (lib/heat). */
-const level = heatLevel;
-
-/** The calendar year as 7-row columns, Monday on top, with a cell per day. */
-function YearGrid({ j }: { j: Journal }) {
+/**
+ * The calendar year as 7-row columns, Monday on top, with a cell per day, coloured by the daily goal like
+ * the sidebar's calendar (lib/heat). Hovering a day tells its minutes and the goal; clicking it shows that day.
+ */
+function YearGrid({ j, picked, onDay }: { j: Journal; picked: string | null; onDay: (day: string) => void }) {
+  const goal = useGoal((g) => g.goal);
   const secs = useMemo(() => new Map(j.days), [j.days]);
+  const [tip, setTip] = useState<{ at: DOMRect; day: string; secs: number } | null>(null);
   const cells = useMemo(() => {
     const first = new Date(j.year, 0, 1);
     const lead = (first.getDay() + 6) % 7; // empty cells before 1 January
-    const out: { cls: string; title: string }[] = [];
-    for (let i = 0; i < lead; i++) out.push({ cls: "pad", title: "" });
+    const out: { cls: string; day: string | null }[] = [];
+    for (let i = 0; i < lead; i++) out.push({ cls: "pad", day: null });
     for (let d = new Date(first); d.getFullYear() === j.year; d.setDate(d.getDate() + 1)) {
       const k = ymd(d);
       const s = secs.get(k) ?? 0;
       const future = k > j.today;
-      const label = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-      out.push({
-        cls: `${future ? "fut" : `l${level(s)}`}${k === j.today ? " today" : ""}`,
-        title: future ? label : `${label}: ${s ? hm(s) : "no reading"}`,
-      });
+      out.push({ cls: `${future ? "fut" : `l${heatLevel(s, goal)}`}${k === j.today ? " today" : ""}`, day: future ? null : k });
     }
     return out;
-  }, [j.year, j.today, secs]);
+  }, [j.year, j.today, secs, goal]);
+  const dayOf = (e: React.MouseEvent) => (e.target as HTMLElement).closest<HTMLElement>("i[data-day]");
   return (
     <div className="jr-yearwrap">
       <div className="jr-mons" aria-hidden="true">
         {MONTHS.map((m) => <span key={m}>{m}</span>)}
       </div>
-      <div className="jr-yr" role="img" aria-label={`Reading days in ${j.year}`}>
-        {cells.map((c, i) => <i key={i} className={c.cls} title={c.title} />)}
+      <div
+        className="jr-yr"
+        role="img"
+        aria-label={`Reading days in ${j.year}`}
+        onMouseOver={(e) => {
+          const el = dayOf(e);
+          const k = el?.dataset.day;
+          if (!el || !k) return setTip(null);
+          if (tip?.day !== k) setTip({ at: el.getBoundingClientRect(), day: k, secs: secs.get(k) ?? 0 });
+        }}
+        onMouseLeave={() => setTip(null)}
+        onClick={(e) => {
+          const k = dayOf(e)?.dataset.day;
+          if (k) onDay(k);
+        }}
+      >
+        {cells.map((c, i) => <i key={i} className={`${c.cls}${c.day && c.day === picked ? " picked" : ""}`} data-day={c.day ?? undefined} />)}
       </div>
+      {tip && <DayTip at={tip.at} day={tip.day} secs={tip.secs} hint={tip.day === picked ? "click to see the whole year" : "click to see this day"} />}
     </div>
+  );
+}
+
+/** "Goal 30 min a day": the daily goal the days are coloured by (the same setting as Settings › Reading defaults). */
+function GoalPicker() {
+  const { goal, setGoal } = useGoal();
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="jr-goal">
+      <button type="button" className="jr-goalbtn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} title="The daily goal the days are coloured by">
+        Goal {goal} min a day<i className="ms">expand_more</i>
+      </button>
+      {open && (
+        <>
+          <div className="jr-goalscrim" onClick={() => setOpen(false)} />
+          <div className="jr-goalmenu" role="menu">
+            {GOALS.map((g) => (
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={g === goal}
+                key={g}
+                className={g === goal ? "on" : ""}
+                onClick={() => {
+                  setGoal(g);
+                  setOpen(false);
+                }}
+              >
+                <i className="ms">{g === goal ? "check" : ""}</i>
+                {g} min a day
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -139,6 +190,10 @@ function BookRow({ b, book }: { b: JBook; book: Book | undefined }) {
 
 export function JournalPage() {
   const [period, setPeriod] = useState<Period>("year");
+  // a day clicked in the sidebar's calendar or the year map: the books and hours are that day's
+  const day = useStore((s) => s.journalDay);
+  const goJournalDay = useStore((s) => s.goJournalDay);
+  const goal = useGoal((g) => g.goal);
   const [j, setJ] = useState<Journal | null>(null);
   const [l, setL] = useState<Learning | null>(null);
   const [review, setReview] = useState(false);
@@ -146,10 +201,10 @@ export function JournalPage() {
   const books = useStore((s) => s.books);
 
   const load = (p: Period) => {
-    m7.journal(p).then(setJ).catch((e) => setMsg(String(e)));
+    m7.journal(day ? `day:${day}` : p).then(setJ).catch((e) => setMsg(String(e)));
     invoke<Learning>("learning_stats").then(setL).catch(() => {});
   };
-  useEffect(() => load(period), [period]);
+  useEffect(() => load(period), [period, day]); // eslint-disable-line react-hooks/exhaustive-deps
   // a reading tick in a second window, or a review, changes the numbers
   useEffect(() => {
     const t = window.setInterval(() => document.visibilityState === "visible" && load(period), 60_000);
@@ -158,7 +213,7 @@ export function JournalPage() {
       clearInterval(t);
       un.then((f) => f());
     };
-  }, [period]);
+  }, [period, day]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byId = useMemo(() => new Map(books.map((b) => [b.id, b])), [books]);
   if (!j) return <div className="scroll">{msg && <div className="err">{msg}</div>}</div>;
@@ -166,7 +221,19 @@ export function JournalPage() {
   const streak = streakOf(new Map(j.days), new Date());
   const [wk, wku] = big(j.weekSeconds);
   const [yr, yru] = big(j.yearSeconds);
-  const periodName = period === "week" ? "this week" : period === "month" ? "this month" : "this year";
+  const dayDate = day ? parse(day) : null;
+  const periodName = dayDate
+    ? day === j.today
+      ? "today"
+      : `on ${dayName(dayDate)}`
+    : period === "week"
+      ? "this week"
+      : period === "month"
+        ? "this month"
+        : "this year";
+  const daySecs = day ? (new Map(j.days).get(day) ?? 0) : 0;
+  // "yet" only while the period (or the day) is still going
+  const yet = !day || day === j.today ? " yet" : "";
 
   // days you read: the average minutes on each weekday so far in the period
   const avg = j.weekdays.map((s, i) => (j.weekdayCount[i] ? s / j.weekdayCount[i] : 0));
@@ -217,10 +284,26 @@ export function JournalPage() {
           <div className="pills">
             <div className="seg" role="radiogroup" aria-label="Period">
               {(["week", "month", "year"] as Period[]).map((p) => (
-                <button type="button" key={p} role="radio" aria-checked={period === p} className={period === p ? "on" : ""} onClick={() => setPeriod(p)}>
+                <button
+                  type="button"
+                  key={p}
+                  role="radio"
+                  aria-checked={!day && period === p}
+                  className={!day && period === p ? "on" : ""}
+                  onClick={() => {
+                    if (day) goJournalDay(null);
+                    setPeriod(p);
+                  }}
+                >
                   {p[0].toUpperCase() + p.slice(1)}
                 </button>
               ))}
+              {dayDate && (
+                <button type="button" role="radio" aria-checked className="on jr-dayseg" onClick={() => goJournalDay(null)} title="Back to the whole period">
+                  {dayName(dayDate)}
+                  <i className="ms">close</i>
+                </button>
+              )}
             </div>
             <button type="button" className="pill" onClick={exportIt} title="The year as Markdown: totals, months and every book">
               <i className="ms">download</i>Export
@@ -238,11 +321,16 @@ export function JournalPage() {
           <div className="jr-lbl jr-daylbl">
             <span>
               Reading days
-              {best && best[1] > 0 && ` · best day ${parse(best[0]).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}, ${hm(best[1])}`}
+              {dayDate
+                ? ` · ${dayName(dayDate)}, ${daySecs > 0 ? `${dayTime(daySecs)}, ${goalNote(daySecs, goal)}` : "no reading"}`
+                : best && best[1] > 0 && ` · best day ${parse(best[0]).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}, ${hm(best[1])}`}
             </span>
-            <HeatKey />
+            <span className="jr-keys">
+              <GoalPicker />
+              <HeatKey />
+            </span>
           </div>
-          <YearGrid j={j} />
+          <YearGrid j={j} picked={day} onDay={(d) => goJournalDay(d === day ? null : d)} />
         </div>
         <div>
           <div className="jr-lbl">
@@ -257,7 +345,7 @@ export function JournalPage() {
             <div className="su" style={{ whiteSpace: "normal" }}>
               {j.periodSeconds > 0
                 ? `${hm(j.periodSeconds)} read ${periodName}, from before Katana Desk kept time per book.`
-                : `Nothing read ${periodName} yet. Time counts while a book is open in front and its pages turn.`}
+                : `Nothing read ${periodName}${yet}. Time counts while a book is open in front and its pages turn.`}
             </div>
           )}
         </div>
@@ -274,7 +362,7 @@ export function JournalPage() {
               {avg[topDay] > 0 ? (
                 <><b>{LONG_DAYS[topDay]}</b> is your day · {hm(Math.round(avg[topDay]))} on average</>
               ) : (
-                `No reading ${periodName} yet`
+                `No reading ${periodName}${yet}`
               )}
             </div>
           </div>

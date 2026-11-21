@@ -1,10 +1,10 @@
-/* Reading days: one scale in five steps (lib/heat.tsx), in the theme's accent green, lighter to stronger.
-   Used by the sidebar's Reading card and the Journal's year. */
+/* Reading days: one scale in five steps against the daily goal (lib/heat.tsx), in the theme's accent,
+   lighter to stronger. Used by the sidebar's calendar and the Journal's year. */
 :root {
   --hm0: color-mix(in srgb, var(--k-outv) 34%, transparent);
-  --hm1: color-mix(in srgb, var(--k-tint) 30%, transparent);
-  --hm2: color-mix(in srgb, var(--k-tint) 55%, transparent);
-  --hm3: color-mix(in srgb, var(--k-tint) 80%, transparent);
+  --hm1: color-mix(in srgb, var(--k-tint) 28%, transparent);
+  --hm2: color-mix(in srgb, var(--k-tint) 52%, transparent);
+  --hm3: color-mix(in srgb, var(--k-tint) 78%, transparent);
   --hm4: var(--k-tint);
 }
 .l0 { background: var(--hm0) }
@@ -14,49 +14,63 @@
 .l4 { background: var(--hm4) }
 
 /* the key: Less ▢▢▢▢▢ More */
-.hmkey { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--k-var); font-weight: 500; white-space: nowrap }
+.hmkey { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--k-var); font-weight: 500; white-space: nowrap; vertical-align: middle }
 .hmkey i { width: 10px; height: 10px; border-radius: 2px; display: inline-block }
-.hmkey i:first-of-type { margin-left: 3px }
-.hmkey i:last-of-type { margin-right: 3px }
 
-/* the sidebar's Reading card */
-.rc { padding: 14px 12px 12px; gap: 12px; cursor: default; text-align: left }
-.rc:hover { background: var(--k-sc) }
-.rc > button { width: 100%; text-align: left; border-radius: 12px }
-.rc .rch { display: flex; justify-content: space-between; align-items: center; padding: 0 2px }
-.rc .rch:hover .dim { color: var(--k-on) }
-.rnow { display: flex; gap: 10px; align-items: center; padding: 6px; margin: -2px -4px; width: calc(100% + 8px) !important }
-.rnow:hover, .rcbody:hover { background: var(--k-sch) }
+/* a day's tooltip, above the day, kept inside the window */
+.daytip { position: fixed; transform: translateY(-100%); z-index: 80; pointer-events: none; white-space: nowrap; background: var(--k-schh); color: var(--k-on); font-size: 12px; font-weight: 500; line-height: 16px; padding: 6px 10px; border-radius: 8px; box-shadow: 0 6px 16px var(--k-shadow) }
+.daytip small { display: block; color: var(--k-var); font-size: 11px; font-weight: 500; margin-top: 1px }
+.daytip::after { content: ""; position: absolute; left: var(--ax, 50%); top: 100%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: var(--k-schh) }
+
+/* the sidebar (canvas board "B · Chosen"): it never scrolls, so the parts fit themselves (Sidebar.tsx useFit) */
+.side { overflow: hidden }
+.side .sl { padding: 10px 12px 4px; line-height: 16px }
+.side .nv.add, .side .nv.add .ms { color: var(--k-var) }
+.side.tight .nv { height: 34px }
+.side.tight .sl { padding-top: 6px }
+
+/* the Reading card, on top */
+.side .rc { padding: 14px 12px 12px; gap: 12px; margin: 4px 0; cursor: default; text-align: left }
+.side .rc:hover { background: var(--k-sc) }
+.rtop { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 0 2px; font-size: 12.5px; color: var(--k-var); width: 100%; text-align: left; white-space: nowrap }
+.rtop b { font-size: 17px; font-weight: 600; color: var(--k-on); margin-right: 4px; font-variant-numeric: tabular-nums }
+.rtop .dim { font-weight: 500 }
+.rtop:hover .dim { color: var(--k-on) }
+.rnow { display: flex; gap: 10px; align-items: center; padding: 6px; margin: -6px; width: calc(100% + 12px); border-radius: 12px; text-align: left }
+.rnow:hover { background: var(--k-sch) }
 .rnow .cv.xs { width: 34px; height: 51px; flex: none }
-.rnt { display: grid; gap: 3px; min-width: 0; flex: 1 }
-.rnt b { font: 500 14px var(--font-book); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.rnt small { font-size: 11.5px; color: var(--k-var); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.rnt .pbar { margin-top: 2px; height: 3px }
-.rcbody { display: grid; gap: 12px; padding: 6px; margin: -6px; width: calc(100% + 12px) !important }
-.rc .rcs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 6px; font-size: 12px }
-.rc .rcs > span { display: block }
-.heat12 { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px }
-.heat12 i { display: block; aspect-ratio: 1; border-radius: 3px }
-.heat12 i.fut { visibility: hidden }
-.heat12 i.today { outline: 1.5px solid var(--k-on); outline-offset: 1px }
-.rcfoot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11.5px; color: var(--k-var); white-space: nowrap }
-.rcyear { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--k-outv) 55%, transparent); font-size: 12px }
-.rcyear > span { display: block }
-.rcyear b { font-size: 17px; font-weight: 600; margin-right: 2px; font-variant-numeric: tabular-nums }
-.rcyear small { display: block; color: var(--k-var); font-size: 11px }
-/* a tall window: the reading list sits a little lower and roomier, less open space above Settings */
-@media (min-height: 960px) {
-  .side > .sl:not(:first-child) { margin-top: 14px }
-  .side .nv { height: 44px }
-}
-/* a short window: this year's row, then the book row, go, so the sidebar still fits */
-@media (max-height: 900px) { .rcyear { display: none } }
-@media (max-height: 820px) { .rnow { display: none } }
-/* shorter still: just the streak and this week, and flatter days */
-@media (max-height: 760px) {
-  .rc .rcs > span:nth-child(2), .rc .rcs > span:nth-child(3) { display: none }
-  .heat12 i { aspect-ratio: auto; height: 9px; border-radius: 2px }
-}
+.rnt { display: block; min-width: 0; flex: 1 }
+.rnt b { display: block; font: 500 14px var(--font-book); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.rnt small { display: block; font-size: 11.5px; color: var(--k-var); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.rnt .pbar { margin-top: 6px; height: 3px }
+
+/* the reading days as a calendar: M to S across, a week a row, the month at the left */
+.hblock { display: grid; gap: 10px }
+.hcal { display: grid; grid-template-columns: 30px repeat(7, 20px); gap: 3px; position: relative }
+.hcal > i, .hcal > button { display: block; width: 20px; height: 20px; border-radius: 3px; padding: 0 }
+.hcal > button { cursor: pointer }
+.hcal > button:hover, .hcal > button:focus-visible { outline: 1.5px solid var(--k-var); outline-offset: 1px }
+.hcal > .fut { visibility: hidden }
+.hcal > .today, .hcal > .today:hover { outline: 1.5px solid var(--k-on); outline-offset: 1px }
+.hcal .hd { font-size: 10.5px; font-weight: 600; color: var(--k-dim); line-height: 1; align-self: end; justify-self: center }
+.hcal .mo { font-size: 10.5px; font-weight: 600; color: var(--k-dim); line-height: 1; align-self: center; white-space: nowrap }
+.hfoot { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11.5px; color: var(--k-var); white-space: nowrap }
+
+/* the word of the day, above Settings */
+.wod { background: var(--k-sc); border-radius: 20px; padding: 12px 12px 12px 14px; display: grid; gap: 2px; margin-bottom: 4px; flex: none; min-width: 0 }
+.wod .lbl { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; font-weight: 600; color: var(--k-var); white-space: nowrap }
+.wod .lbl .dim { font-weight: 500; display: flex; align-items: center; gap: 6px; min-width: 0 }
+.wod .lbl .wbook { overflow: hidden; text-overflow: ellipsis }
+.wod .d { width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; flex: none; display: inline-block; border: 1.5px solid var(--k-var) }
+.wod .d.learning { border-color: var(--k-pri); background: linear-gradient(90deg, var(--k-pri) 50%, transparent 50%) }
+.wod .d.learned { border-color: var(--k-tint); background: var(--k-tint) }
+.wod .w { font: 600 20px/26px var(--font-book); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.wod .m { font-size: 12.5px; line-height: 17px; color: var(--k-var); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.wod .acts { display: flex; gap: 6px; margin-top: 8px }
+.wod .pill { height: 30px; padding: 0 11px; font-size: 12.5px; gap: 6px }
+.wod .pill .ms { font-size: 16px }
+.wod .pill:disabled { opacity: .7; cursor: default }
+.wod .pill.sq { width: 30px; padding: 0; justify-content: center; margin-left: auto; flex: none }
 
 /* the Journal's year in the same scale */
 .jr-yr i.l0 { background: var(--hm0); opacity: 1 }
@@ -65,4 +79,19 @@
 .jr-yr i.l3 { background: var(--hm3); opacity: 1 }
 .jr-yr i.l4 { background: var(--hm4); opacity: 1 }
 .jr-yr i.fut { background: var(--hm0); opacity: .35 }
+.jr-yr i[data-day] { cursor: pointer }
+.jr-yr i[data-day]:hover { outline: 1.5px solid var(--k-var); outline-offset: 1px }
+.jr-yr i.picked, .jr-yr i.picked:hover { outline: 2px solid var(--k-pri); outline-offset: 1px }
 .jr-daylbl { display: flex; justify-content: space-between; align-items: center; gap: 12px; max-width: 1240px; flex-wrap: wrap }
+.jr-keys { display: inline-flex; align-items: center; gap: 14px }
+.jr-goal { position: relative }
+.jr-goalbtn { display: inline-flex; align-items: center; gap: 2px; font-size: 11.5px; font-weight: 500; color: var(--k-var); border-radius: 8px; padding: 2px 4px 2px 8px }
+.jr-goalbtn:hover { background: var(--k-cap-hover); color: var(--k-on) }
+.jr-goalbtn .ms { font-size: 16px }
+.jr-goalscrim { position: fixed; inset: 0; z-index: 30 }
+.jr-goalmenu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 31; background: var(--k-surface); border-radius: 12px; padding: 6px; box-shadow: 0 10px 30px var(--k-shadow); display: grid; min-width: 160px }
+.jr-goalmenu button { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 6px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--k-on); text-align: left }
+.jr-goalmenu button .ms { width: 18px; font-size: 18px }
+.jr-goalmenu button:hover { background: var(--k-schh) }
+.jr-dayseg { display: inline-flex !important; align-items: center; gap: 4px }
+.jr-dayseg .ms { font-size: 16px }

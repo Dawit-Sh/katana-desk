@@ -13,7 +13,8 @@ const nextLabel = (w: Word | undefined) => {
   return days <= 0 ? "later today" : days === 1 ? "tomorrow" : `in ${days} days`;
 };
 
-export function Review({ bookId, onClose, onChanged }: { bookId: number | null; onClose: () => void; onChanged?: () => void }) {
+/** `word`: review just that word (the sidebar's word of the day), due or not. */
+export function Review({ bookId, word, onClose, onChanged }: { bookId: number | null; word?: Word; onClose: () => void; onChanged?: () => void }) {
   const [all, setAll] = useState(false);
   const [list, setList] = useState<Word[] | null>(null);
   const [queue, setQueue] = useState<number[]>([]);
@@ -26,8 +27,7 @@ export function Review({ bookId, onClose, onChanged }: { bookId: number | null; 
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    words
-      .due(bookId, all)
+    (word && !all ? Promise.resolve([word]) : words.due(bookId, all))
       .then((l) => {
         setList(l);
         setQueue(l.map((w) => w.id));
@@ -37,7 +37,7 @@ export function Review({ bookId, onClose, onChanged }: { bookId: number | null; 
         setShown(false);
       })
       .catch(() => setList([]));
-  }, [bookId, all]);
+  }, [bookId, all, word?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byId = useMemo(() => new Map((list ?? []).map((w) => [w.id, w])), [list]);
   const cur = queue.length ? byId.get(queue[0]) : undefined;

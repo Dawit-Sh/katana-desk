@@ -209,7 +209,8 @@ export const bookKey = (b: { id: number; source?: string; grimmoryId?: number | 
   b.source === "grimmory" && b.grimmoryId != null ? `g:${b.grimmoryId}` : `b:${b.id}`;
 
 export const m7 = {
-  journal: (period: Period) => invoke<Journal>("journal_stats", { period }),
+  /** a period, or one day as `day:YYYY-MM-DD` */
+  journal: (period: Period | `day:${string}`) => invoke<Journal>("journal_stats", { period }),
   journalExport: (path: string) => invoke<void>("journal_export", { path }),
   search: (q: string) => invoke<Found>("search_everything", { q }),
   openWindow: (bookId: number, at: string | null = null, title: string | null = null) => invoke<void>("open_book_window", { bookId, at, title }),

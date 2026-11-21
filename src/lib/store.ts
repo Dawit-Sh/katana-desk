@@ -53,6 +53,12 @@ type State = {
   setScan: (s: ScanState) => void;
   go: (page: Page) => void;
   goPlace: (p: Place) => void;
+  /** the day the Journal shows (a reading day clicked in the sidebar or the year map), null for its periods */
+  journalDay: string | null;
+  goJournalDay: (day: string | null) => void;
+  /** the Settings section to open on (Add a server opens Sources) */
+  settingsAt: string | null;
+  goSettings: (section: string) => void;
   select: (id: number | null, sheet?: boolean) => void;
   closeSheet: () => void;
   open: (id: number, at?: string | null) => void;
@@ -94,6 +100,8 @@ export const useStore = create<State>((set, get) => ({
   sheetOpen: false,
   readingId: null,
   openAt: null,
+  journalDay: null,
+  settingsAt: null,
   query: "",
   themePref: "system",
   folded: false,
@@ -157,7 +165,9 @@ export const useStore = create<State>((set, get) => ({
   },
   setScan: (scan) => set({ scan }),
   go: (page) =>
-    set({ page, sheetOpen: false, gSheet: false, query: page === "local" || page === "grimmory" ? get().query : "" }),
+    set({ page, sheetOpen: false, gSheet: false, journalDay: null, settingsAt: null, query: page === "local" || page === "grimmory" ? get().query : "" }),
+  goJournalDay: (journalDay) => set({ page: "journal", journalDay, sheetOpen: false, gSheet: false, query: "" }),
+  goSettings: (settingsAt) => set({ page: "settings", settingsAt, sheetOpen: false, gSheet: false, query: "" }),
   goPlace: (place) => set({ place, page: "local", query: "" }),
   select: (id, sheet = true) => set({ selectedId: id, sheetOpen: id != null && sheet }),
   closeSheet: () => set({ sheetOpen: false }),

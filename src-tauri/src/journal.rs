@@ -80,14 +80,23 @@ fn ms_of(day: NaiveDate) -> i64 {
         .unwrap_or(0)
 }
 
+/// `period` is "week", "month", "year" or a single day as "day:YYYY-MM-DD" (a reading day clicked in the
+/// sidebar or the year map): the books, weekdays and hours are then that day's; the totals stay as they are.
 pub fn stats(conn: &Connection, today: NaiveDate, period: &str) -> rusqlite::Result<Journal> {
+    let one_day = period
+        .strip_prefix("day:")
+        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        .filter(|x| *x <= today);
     let period = match period {
         "week" | "month" | "year" => period,
+        _ if one_day.is_some() => "day",
         _ => "year",
     };
     let t = d(&today);
-    let from_date = period_start(today, period);
+    let from_date = one_day.unwrap_or_else(|| period_start(today, period));
+    let to_date = one_day.unwrap_or(today);
     let from = d(&from_date);
+    let to = d(&to_date);
     let year_start = NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap();
     let ys = d(&year_start);
     let since = d(&(today - Duration::days(400)));
@@ -95,12 +104,13 @@ pub fn stats(conn: &Connection, today: NaiveDate, period: &str) -> rusqlite::Res
     let mut st = conn.prepare("SELECT day, seconds FROM reading_days WHERE day >= ?1 AND seconds > 0 ORDER BY day")?;
     let days: Vec<(String, i64)> = st.query_map([&since], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
 
-    let period_seconds = sum_days(conn, &from, &t)?;
+    let period_seconds = sum_days(conn, &from, &to)?;
     let week_seconds = sum_days(conn, &d(&period_start(today, "week")), &t)?;
     let year_seconds = sum_days(conn, &ys, &t)?;
 
+    let to_ms = ms_of(to_date + Duration::days(1));
     let finished = |from: NaiveDate| -> rusqlite::Result<i64> {
-        conn.query_row("SELECT COUNT(*) FROM books WHERE finished_at >= ?1", [ms_of(from)], |r| r.get(0))
+        conn.query_row("SELECT COUNT(*) FROM books WHERE finished_at >= ?1 AND finished_at < ?2", [ms_of(from), to_ms], |r| r.get(0))
     };
     let finished_year = finished(year_start)?;
     let finished_period = finished(from_date)?;
@@ -110,15 +120,15 @@ pub fn stats(conn: &Connection, today: NaiveDate, period: &str) -> rusqlite::Res
     let mut st = conn.prepare(
         "SELECT l.book_id, b.title, b.author, b.format, b.cover, b.grimmory_id, b.fraction, b.finished_at,
                 SUM(l.seconds), COUNT(DISTINCT l.day), SUM(l.pages), MAX(l.day),
-                (SELECT COUNT(*) FROM highlights h WHERE h.book_id = l.book_id AND h.deleted_at IS NULL AND h.created_at >= ?2),
-                (SELECT COUNT(*) FROM bookmarks m WHERE m.book_id = l.book_id AND m.deleted_at IS NULL AND m.created_at >= ?2)
+                (SELECT COUNT(*) FROM highlights h WHERE h.book_id = l.book_id AND h.deleted_at IS NULL AND h.created_at >= ?2 AND h.created_at < ?4),
+                (SELECT COUNT(*) FROM bookmarks m WHERE m.book_id = l.book_id AND m.deleted_at IS NULL AND m.created_at >= ?2 AND m.created_at < ?4)
          FROM reading_log l JOIN books b ON b.id = l.book_id
-         WHERE l.day >= ?1
+         WHERE l.day >= ?1 AND l.day <= ?3
          GROUP BY l.book_id
          ORDER BY SUM(l.seconds) DESC",
     )?;
     let books = st
-        .query_map(params![from, from_ms], |r| {
+        .query_map(params![from, from_ms, to, to_ms], |r| {
             Ok(JBook {
                 book_id: r.get(0)?,
                 title: r.get(1)?,
@@ -143,21 +153,21 @@ pub fn stats(conn: &Connection, today: NaiveDate, period: &str) -> rusqlite::Res
     let mut weekdays = vec![0i64; 7];
     let mut weekday_count = vec![0i64; 7];
     for (day, secs) in &days {
-        if day.as_str() >= from.as_str() {
+        if day.as_str() >= from.as_str() && day.as_str() <= to.as_str() {
             if let Ok(x) = NaiveDate::parse_from_str(day, "%Y-%m-%d") {
                 weekdays[x.weekday().num_days_from_monday() as usize] += secs;
             }
         }
     }
     let mut x = from_date;
-    while x <= today {
+    while x <= to_date {
         weekday_count[x.weekday().num_days_from_monday() as usize] += 1;
         x += Duration::days(1);
     }
 
     let mut hours = vec![0i64; 24];
-    let mut st = conn.prepare("SELECT hour, SUM(seconds) FROM reading_log WHERE day >= ?1 GROUP BY hour")?;
-    for row in st.query_map([&from], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+    let mut st = conn.prepare("SELECT hour, SUM(seconds) FROM reading_log WHERE day >= ?1 AND day <= ?2 GROUP BY hour")?;
+    for row in st.query_map([&from, &to], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
         let (h, s) = row?;
         if (0..24).contains(&h) {
             hours[h as usize] += s;
@@ -287,5 +297,14 @@ mod tests {
         assert_eq!(j.months[9], 60);
         assert_eq!(j.speed.last().unwrap().1, 16);
         assert_eq!(j.best_day.as_ref().unwrap().0, "2026-11-18");
+        // one day: that day's book, weekday and hours; the totals stay
+        let one = stats(&c, t, "day:2026-11-19").unwrap();
+        assert_eq!((one.period.as_str(), one.from.as_str(), one.period_seconds), ("day", "2026-11-19", 300));
+        assert_eq!((one.books[0].seconds, one.books[0].pages), (300, 4));
+        assert_eq!((one.hours[7], one.hours[21]), (300, 0));
+        assert_eq!(one.weekday_count.iter().sum::<i64>(), 1);
+        assert_eq!(one.year_seconds, 960);
+        // a day to come, or no date, is the year
+        assert_eq!(stats(&c, t, "day:2026-12-01").unwrap().period, "year");
     }
 }
