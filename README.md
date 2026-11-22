@@ -28,6 +28,10 @@
     <td><img src="docs/screenshots/journal.jpg" alt="The Journal: a year of reading days coloured by a daily goal, books this year and charts"></td>
     <td><img src="docs/screenshots/settings-paper.jpg" alt="Settings in the light Paper theme, showing the eight themes as little windows"></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/words-graph.jpg" alt="My words as a graph: avaricious picked, joined by zigzags to covetous and greedy from two other books, with its card showing the meaning and the sentence"></td>
+    <td><img src="docs/screenshots/words-graph-book.jpg" alt="The graph of one book in the light Paper theme: Vanity Fair's cover in the middle, its words around it, and the picked word's card at the side"></td>
+  </tr>
 </table>
 
 The books in the screenshots are public domain, from [Standard Ebooks](https://standardebooks.org) and [Project Gutenberg](https://www.gutenberg.org).
