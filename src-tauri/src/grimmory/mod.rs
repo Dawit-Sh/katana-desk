@@ -5,15 +5,21 @@
 //!   refresh token. Grimmory replaces the refresh token on every renewal and refuses the old one, so all
 //!   renewals go through one place, one at a time, and the new tokens are saved the moment they arrive.
 //! - One slow reply never shows Grimmory offline: a failed request starts a second look 1.5 s later.
+//! - Offline, Grimmory's health check (no sign-in needed) is asked every 30 s, so the moment it answers
+//!   again places, statuses and marks waiting here go up and the library catches up.
+//! - The library syncs in the background whichever page is on screen (at start, every 10 minutes, when
+//!   the window comes back to the front, when Grimmory is back), not only while Grimmory's page shows.
 //! - Requests wait for silence, never for a total time: 10 s to connect, 60 s without a byte.
 
 pub mod catalog;
 pub mod covers;
 pub mod downloads;
+pub mod finder;
 pub mod marks_sync;
 pub mod matching;
 pub mod pdf_annots;
 pub mod place;
+pub mod status_sync;
 pub mod sync;
 
 use crate::db::{self, Db};
@@ -26,7 +32,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-pub const DEFAULT_URL: &str = "http://192.168.100.100:6060";
+/// No address until he signs in: the sign-in page looks for Grimmory on this network (`finder.rs`).
+pub const DEFAULT_URL: &str = "";
 
 const K_URL: &str = "grimmory.url";
 const K_USER: &str = "grimmory.user";
@@ -75,7 +82,8 @@ impl std::fmt::Display for GErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GErr::SignedOut => write!(f, "Grimmory signed this PC out. Sign in again."),
-            GErr::Offline(m) => write!(f, "Grimmory can't be reached ({m})."),
+            // what went wrong on the way (a timeout, a refused connection) goes to the log, not on screen
+            GErr::Offline(_) => write!(f, "Grimmory can't be reached. Check that this PC is on the same network as the server, and that the server is on."),
             GErr::Server(c, m) if m.is_empty() => write!(f, "Grimmory answered {c}."),
             GErr::Server(c, m) => write!(f, "Grimmory answered {c}: {m}"),
             GErr::Other(m) => write!(f, "{m}"),
@@ -104,11 +112,25 @@ fn net(e: reqwest::Error) -> GErr {
             m = s.to_string();
             src = s.source();
         }
+        eprintln!("katana: Grimmory not reached: {m}");
         GErr::Offline(m)
     } else {
         GErr::Other(e.to_string())
     }
 }
+
+/// What a sign-in that found nothing at `url` says, in place of the network's own words.
+pub fn unreachable_message(url: &str) -> String {
+    format!(
+        "No answer from {url}. Check that this PC is on the same network as the server. \
+         If a browser here can't open that address either, check that the server is on."
+    )
+}
+
+/// A first sign-in shouldn't fail on a network still waking up (a PC just back from sleep): when the
+/// connection fails at once it tries again after 2 s and 4 s. A wrong password, or an address where
+/// nothing answers within the connect time, comes back at once.
+pub const SIGN_IN_WAITS: [u64; 2] = [2, 4];
 
 struct Tokens {
     access: String,
@@ -397,15 +419,22 @@ fn recheck(app: &AppHandle) {
     });
 }
 
-/// While Grimmory is offline: look again after 2 minutes, then 4, 8, 16, and every 30.
+/// How long to wait before each look at Grimmory while it's offline: 15 s, then every 30 s. Its health
+/// check is one small answer on the home network, so asking often costs nothing, and Grimmory is caught
+/// up within half a minute of coming back (the Zima waking, this PC back on its Wi-Fi).
+pub fn offline_wait(attempt: u32) -> Duration {
+    Duration::from_secs(if attempt == 0 { 15 } else { 30 })
+}
+
+/// While Grimmory is offline: look again every 30 s until it answers.
 pub fn start_retry_timer(app: &AppHandle) {
     let gr = g(app);
     let gen = gr.retry_gen.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let mut wait = 2u64;
+        let mut attempt = 0u32;
         loop {
-            tokio::time::sleep(Duration::from_secs(wait * 60)).await;
+            tokio::time::sleep(offline_wait(attempt)).await;
             if g(&app).retry_gen.load(Ordering::SeqCst) != gen {
                 return;
             }
@@ -416,16 +445,20 @@ pub fn start_retry_timer(app: &AppHandle) {
                 reached(&app);
                 return;
             }
-            wait = (wait * 2).min(30);
+            attempt += 1;
         }
     });
 }
 
-/// Back from offline: places waiting go up, waiting downloads go on, the library catches up.
+/// Back from offline: places and statuses waiting go up, waiting downloads go on, the library catches up.
 fn back_online(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        if !g(&app).signed_in() {
+            return;
+        }
         sync::push_all(&app).await;
+        status_sync::push(&app).await;
         marks_sync::push_all(&app).await;
         downloads::resume_waiting(&app);
         let _ = catalog::sync(&app, false).await;
@@ -453,6 +486,7 @@ pub fn start(app: &AppHandle) {
         }
         downloads::restore(&app);
         sync::push_all(&app).await;
+        status_sync::push(&app).await;
         marks_sync::push_all(&app).await;
         let _ = catalog::sync(&app, false).await;
         // keep up while open: the reading places that moved elsewhere, every 10 minutes
@@ -477,17 +511,22 @@ pub fn grimmory_status(app: AppHandle) -> Status {
 pub async fn grimmory_sign_in(app: AppHandle, url: String, user: String, password: String) -> Result<Status, String> {
     let url = normalize_url(&url)?;
     let gr = g(&app);
-    let resp = gr
-        .http
-        .post(format!("{url}/api/v1/auth/login"))
-        .json(&serde_json::json!({ "username": user.trim(), "password": password }))
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await
-        .map_err(|e| match net(e) {
-            GErr::Offline(_) => format!("Nothing answered at {url}. Is the address right, and is the Zima on?"),
-            other => other.to_string(),
-        })?;
+    let body = serde_json::json!({ "username": user.trim(), "password": password });
+    let mut waits = SIGN_IN_WAITS.iter();
+    let resp = loop {
+        let tried = std::time::Instant::now();
+        match gr.http.post(format!("{url}/api/v1/auth/login")).json(&body).timeout(Duration::from_secs(30)).send().await {
+            Ok(r) => break r,
+            Err(e) => match net(e) {
+                // a quick failure is a network still waking: try again; a slow one (nothing there) is said at once
+                GErr::Offline(_) => match waits.next().filter(|_| tried.elapsed() < Duration::from_secs(3)) {
+                    Some(w) => tokio::time::sleep(Duration::from_secs(*w)).await,
+                    None => return Err(unreachable_message(&url)),
+                },
+                other => return Err(other.to_string()),
+            },
+        }
+    };
     let status = resp.status();
     let text = resp.text().await.map_err(|e| e.to_string())?;
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
@@ -553,9 +592,10 @@ pub fn grimmory_set_url(app: AppHandle, url: String) -> Result<Status, String> {
 #[tauri::command]
 pub async fn grimmory_check(app: AppHandle) -> bool {
     let ok = check_now(&app).await;
-    if ok {
+    if ok && g(&app).signed_in() {
         downloads::resume_waiting(&app);
         sync::push_all(&app).await;
+        status_sync::push(&app).await;
         marks_sync::push_all(&app).await;
     }
     ok
@@ -564,11 +604,38 @@ pub async fn grimmory_check(app: AppHandle) -> bool {
 fn normalize_url(url: &str) -> Result<String, String> {
     let mut u = url.trim().trim_end_matches('/').to_string();
     if u.is_empty() {
-        return Err("Type the server's address, like http://192.168.100.100:6060".into());
+        return Err("Type the server's address, like http://192.168.1.20:6060".into());
     }
     if !u.starts_with("http://") && !u.starts_with("https://") {
         u = format!("http://{u}");
     }
     reqwest::Url::parse(&u).map_err(|_| format!("“{url}” isn't an address Katana Desk can use."))?;
     Ok(u)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offline_grimmory_is_looked_at_every_half_minute() {
+        assert_eq!(offline_wait(0), Duration::from_secs(15));
+        assert!((1..50).all(|n| offline_wait(n) == Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn no_answer_reads_plainly() {
+        let m = unreachable_message("http://192.168.1.20:6060");
+        assert!(m.starts_with("No answer from http://192.168.1.20:6060."));
+        assert!(m.contains("same network"));
+        assert!(!m.to_lowercase().contains("timeout") && !m.to_lowercase().contains("timed out") && !m.contains('\u{2014}'));
+        let e = GErr::Offline("operation timed out (os error 10060)".into()).to_string();
+        assert!(!e.contains("timed out") && !e.contains("os error"), "{e}");
+    }
+
+    #[test]
+    fn an_address_without_http_gets_it_and_an_empty_one_says_what_to_type() {
+        assert_eq!(normalize_url("192.168.1.20:6060/").unwrap(), "http://192.168.1.20:6060");
+        assert!(normalize_url("  ").unwrap_err().contains("like http://"));
+    }
 }

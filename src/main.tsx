@@ -8,11 +8,13 @@ import "@fontsource/noto-serif/500.css";
 import "material-symbols/rounded.css";
 import "./styles/app.css";
 import "./styles/words.css";
+import "./styles/graph.css";
 import "./styles/m7.css";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { App, applyTheme } from "./App";
 import { api, grimmory, READABLE } from "./lib/api";
 import { useStore, type CoverSize, type GSort, type Page, type ThemePref } from "./lib/store";
+import { startPage } from "./lib/startpage";
 
 async function start() {
   // settings first, so the first frame already has the right theme and sidebar
@@ -33,7 +35,8 @@ async function start() {
   if (zoom && Number(zoom) !== 1) await getCurrentWebview().setZoom(Number(zoom)).catch(() => {});
   const covers = (coverSize === "s" || coverSize === "m" ? coverSize : "l") as CoverSize;
   document.documentElement.dataset.covers = covers;
-  const start: Page = opensOn === "grimmory" || opensOn === "local" || opensOn === "journal" ? opensOn : g?.signedIn ? "grimmory" : "local";
+  // never on a source that isn't connected: Grimmory's page only once signed in
+  const start: Page = startPage(opensOn, !!g?.signedIn);
   useStore.setState({
     themePref: (theme as ThemePref) ?? "system",
     folded: folded === "1",

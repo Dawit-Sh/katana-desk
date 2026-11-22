@@ -237,7 +237,7 @@ function Appearance() {
         <div className="srow">
           <div className="tx">
             <b>Glass sidebar</b>
-            <small>{glassMsg || "Windows 11's Mica behind the title bar and sidebar, like the glass bars on the Fire"}</small>
+            <small>{glassMsg || "Windows 11's Mica behind the title bar and sidebar"}</small>
           </div>
           <button
             type="button"
@@ -409,6 +409,7 @@ const ENGINES = [
   { name: "foliate-js", what: "Reads EPUB, MOBI, AZW3 and FB2", licence: "MIT", url: "https://github.com/johnfactotum/foliate-js" },
   { name: "PDF.js", what: "Mozilla's PDF reader: draws PDFs and their text", licence: "Apache-2.0", url: "https://github.com/mozilla/pdf.js" },
   { name: "DjVuLibre 3.5.28", what: "Reads DjVu books and their hidden text", licence: "GPL-2.0-or-later", url: "https://djvu.sourceforge.net/" },
+  { name: "Open English WordNet 2025", what: "Which saved words mean the same, for My words' graph (inside the app)", licence: "CC BY 4.0", url: "https://github.com/globalwordnet/english-wordnet" },
   { name: "Tauri", what: "The window, files and network, in Rust", licence: "MIT or Apache-2.0", url: "https://github.com/tauri-apps/tauri" },
   { name: "Open Library", what: "Covers found online in Change cover (Internet Archive)", licence: "Cover terms", url: "https://openlibrary.org/dev/docs/api/covers" },
 ];

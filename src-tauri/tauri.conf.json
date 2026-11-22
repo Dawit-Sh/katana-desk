@@ -66,6 +66,9 @@
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": true,
+    "resources": {
+      "resources/katana-synonyms-en.sqlite": "resources/katana-synonyms-en.sqlite"
+    },
     "longDescription": "A reader for EPUB, MOBI, AZW3, FB2, PDF, DjVu and comics that syncs reading places, highlights and bookmarks with Grimmory, with built-in offline dictionaries.",
     "homepage": "https://github.com/Dawit-Sh/katana-desk",
     "license": "GPL-3.0-or-later",

@@ -444,6 +444,9 @@ async fn run(app: &AppHandle, full: bool) -> GRes<()> {
     let full = full || stale || count == 0 || last_full.map_or(true, |t| gen - t > FULL_EVERY_MS);
     let mark = setting(app, K_READ_MARK).and_then(|s| s.parse::<i64>().ok()).or(mark);
     let before = read_marks(app);
+    // statuses set here while Grimmory was away go up first, so what comes down agrees with them
+    super::status_sync::push(app).await;
+    let statuses_before = super::status_sync::stored(app);
 
     let mut changed: Vec<i64> = vec![];
     if full {
@@ -474,6 +477,10 @@ async fn run(app: &AppHandle, full: bool) -> GRes<()> {
         }
     }
     exact_progress(app, changed).await;
+    // statuses changed on Grimmory's site or by a phone, which may not have moved a last-read time
+    if let Err(e) = super::status_sync::pull(app).await {
+        eprintln!("katana: Grimmory statuses: {e}");
+    }
     let _ = app.emit("grimmory-changed", ());
     if let Err(e) = shelves(app).await {
         eprintln!("katana: Grimmory shelves: {e}");
@@ -498,7 +505,7 @@ async fn run(app: &AppHandle, full: bool) -> GRes<()> {
         let rows = st.query_map([], |r| r.get(0)).map_err(|e| GErr::Other(e.to_string()))?;
         rows.flatten().collect()
     };
-    for gid in reading {
+    for gid in reading.into_iter().chain(super::status_sync::follow(app, &statuses_before)) {
         if !moved.contains(&gid) {
             moved.push(gid);
         }
@@ -534,6 +541,8 @@ pub fn forget(app: &AppHandle) {
     );
     let _ = db::set_setting(&conn, K_LAST_FULL, "");
     let _ = db::set_setting(&conn, K_READ_MARK, "");
+    // statuses set here for the last server's books
+    let _ = db::set_setting(&conn, "grimmory.statusWaiting", "{}");
 }
 
 pub fn gbook(conn: &Connection, id: i64) -> rusqlite::Result<Option<GBook>> {

@@ -38,6 +38,7 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tiny_http = "0.12"
 mdns-sd = "0.13"
+if-addrs = "0.13"
 getrandom = "0.2"
 
 [profile.release]

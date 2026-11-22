@@ -86,7 +86,10 @@ export function App() {
     const c = win.onFocusChanged(({ payload }) => {
       document.documentElement.classList.toggle("blurred", !payload);
       const st = useStore.getState();
-      if (payload && !st.bookWindow && st.g?.signedIn && Date.now() - lastLook > 60_000) {
+      if (payload && !st.bookWindow && st.g?.signedIn && st.g.reach === "offline") {
+        // Grimmory was away: look now (its answer sends what waits here and catches the library up)
+        grimmory.check().catch(() => {});
+      } else if (payload && !st.bookWindow && st.g?.signedIn && Date.now() - lastLook > 60_000) {
         lastLook = Date.now();
         grimmory.sync(false).catch(() => {});
       }

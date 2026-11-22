@@ -6,6 +6,7 @@
     python -I tools/build-dictionary.py wiktionary <kaikki English .jsonl(.gz)> <out.sqlite> [--edition "Oct 2026"]
     python -I tools/build-dictionary.py wordnet <english-wordnet-YYYY.xml(.gz)> <out.sqlite>
     python -I tools/build-dictionary.py manifest <out folder> "" <file.sqlite> [<file.sqlite> ...]   ("" = files beside the list)
+    python -I tools/build-dictionary.py synonyms <katana-dictionary-en-1.sqlite> src-tauri/resources/katana-synonyms-en.sqlite
 
 Sources (download them outside the repo; they never go into git):
   - English Wiktionary as extracted by wiktextract (https://github.com/tatuylonen/wiktextract):
@@ -27,6 +28,16 @@ Keys are lowercase with curly apostrophes made straight. Regular endings (-s, -e
 tries itself when a form isn't listed. `manifest` gzips each file for download and writes
 katana-dictionaries.json (id, name, file, size, sha256, gzip size and sha256, licence, credit), the
 file the app's download URL points at.
+
+`synonyms` builds the small index My words' graph joins words of the same meaning with, shipped inside the
+app (src-tauri/resources/, about 2.4 MB). Its source is Katana's own English pack (Katana repo,
+feature/dictionary/src/main/assets/katana-dictionary-en-1.sqlite, built by Katana's tools/build-dictionary.py
+from Open English WordNet 2025's WNDB files), so the phone and the desk join the same words:
+
+    meta(key, value)              format (1), source, licence, credit
+    senses(word, synset)          word (lowercase, spaces) -> WordNet sense groups it belongs to; only groups
+                                  of two words or more (a group of one never joins two words)
+    exceptions(form, pos, lemma)  WordNet's irregular forms (ran -> run, geese -> goose), pos n, v, a, r
 """
 
 import argparse
@@ -327,6 +338,43 @@ def wordnet(src, dest):
     out.close()
 
 
+# ---------- the graph's synonym index ----------
+
+def synonyms(src, dest):
+    pack = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    rows = pack.execute("SELECT word, synset FROM senses").fetchall()
+    members = {}
+    for word, synset in rows:
+        members.setdefault(synset, set()).add(word)
+    shared = sorted(s for s, ws in members.items() if len(ws) >= 2)
+    dense = {s: i + 1 for i, s in enumerate(shared)}
+    keep = sorted({(w, dense[s]) for w, s in rows if s in dense})
+    exceptions = sorted(set(pack.execute("SELECT form, pos, lemma FROM exceptions").fetchall()))
+    meta = dict(pack.execute("SELECT key, value FROM meta").fetchall())
+    if os.path.exists(dest):
+        os.remove(dest)
+    out = sqlite3.connect(dest)
+    out.executescript("""
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE senses (word TEXT NOT NULL, synset INTEGER NOT NULL, PRIMARY KEY (word, synset)) WITHOUT ROWID;
+        CREATE TABLE exceptions (form TEXT NOT NULL, pos TEXT NOT NULL, lemma TEXT NOT NULL,
+                                 PRIMARY KEY (form, pos, lemma)) WITHOUT ROWID;
+    """)
+    out.executemany("INSERT INTO meta VALUES (?, ?)", [
+        ("format", "1"),
+        ("source", meta.get("name", "Open English WordNet")),
+        ("licence", meta.get("license", "CC BY 4.0")),
+        ("credit", "Open English WordNet (https://en-word.net), CC BY 4.0, via Katana's English pack"),
+    ])
+    out.executemany("INSERT INTO senses VALUES (?, ?)", keep)
+    out.executemany("INSERT INTO exceptions VALUES (?, ?, ?)", exceptions)
+    out.commit()
+    out.execute("VACUUM")
+    out.close()
+    print(f"  {len(keep):,} senses in {len(shared):,} groups, {len(exceptions):,} irregular forms; "
+          f"{os.path.getsize(dest):,} bytes", flush=True)
+
+
 # ---------- the download manifest ----------
 
 def sha256(path):
@@ -385,11 +433,16 @@ def main():
     m.add_argument("out_dir")
     m.add_argument("base")
     m.add_argument("files", nargs="+")
+    y = sub.add_parser("synonyms")
+    y.add_argument("src")
+    y.add_argument("dest")
     a = ap.parse_args()
     if a.cmd == "wiktionary":
         wiktionary(a.src, a.dest, a.edition)
     elif a.cmd == "wordnet":
         wordnet(a.src, a.dest)
+    elif a.cmd == "synonyms":
+        synonyms(a.src, a.dest)
     else:
         manifest(a.out_dir, a.base, a.files)
 

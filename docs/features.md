@@ -37,8 +37,16 @@ Everything the app does, part by part, with the bits that matter if you want to 
   MD5, read from Grimmory as twelve 1 KB samples): it goes up a few seconds after a page turn and when the book closes, and
   a book opens at Grimmory's place when that's the latest read. A place behind this PC's is asked about first ("Go there" or
   "Stay here"). A time without a zone is never compared with this PC's clock.
-- One slow reply never shows Grimmory offline (a second look 1.5 s later); offline, it looks again after 2, 4, 8, 16 and
-  then every 30 minutes, and places waiting go up when it's back.
+- The first sign-in looks for Grimmory on this PC's network by itself: every address of the networks this PC is on is
+  asked, nearest first, for Grimmory's health check (`/api/v1/healthcheck`, no sign-in needed), and the address fills in.
+  A network still waking up gets two more tries; a sign-in that finds nothing says what to check in plain words.
+- The library syncs in the background whichever page is on screen: at start, every 10 minutes, when the window comes
+  back to the front, and as soon as Grimmory answers again after being away.
+- Reading statuses both ways: one set here goes up at once (or waits while Grimmory is away and goes up when it's back);
+  one changed on Grimmory's site or by Katana on a phone comes down with every sync (Grimmory's books by status, eight
+  small lists), so Unread empties the place here and Read gives the book its finished day.
+- One slow reply never shows Grimmory offline (a second look 1.5 s later); offline, its health check is asked every
+  30 seconds, and places, statuses and marks waiting here go up when it's back.
 
 Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/seanmonstar/reqwest)); the place rules are in
 `place.rs` with their tests (`cargo test`).
@@ -107,8 +115,26 @@ Sync lives in Rust (`src-tauri/src/grimmory/`, [reqwest](https://github.com/sean
   comes back after 1, 3, 7, 14, then 30 days; Again brings it back later in the same round.
 - The learning numbers for the Journal (milestone 7) are kept from now on: words learned (known at the 7-day step), reviews
   and first-try answers, words looked up, and highlights, notes, bookmarks and words gone back to from a list.
+- **The words graph** (My words › Graph, as in Katana on Android): every book with the words saved from it around it, a
+  curved line from each word to its book, and words of the same meaning joined by a tapered zigzag, within and across
+  books. Same meaning = two words sharing a WordNet sense group (base forms too: "grasping" counts as grasp, "ran" as run),
+  or the same word saved twice. Zoomed out, books are small rectangles; zoomed in, their covers. One book (the book
+  filter): its cover in the middle, its words round it, other books' words of the same meaning faint further out, and a
+  card at the side with how far its words are. Words: learned filled with a soft glow, learning filled in a second colour,
+  new hollow (never reviewed: new; at the week's step: learned). All / Learned / Learning / New and the search fade the
+  rest. The wheel or a pinch zooms round the pointer, a drag pans, Show everything fits it all. Hover a word to light up
+  its synonyms; click it for its card (meaning, pronunciation, the sentence with the word in bold, book, page and date,
+  reviews and looks back, Same meaning chips, Open in book, Review); double-click flies to it; click a book to zoom to its
+  words; Esc or a click on nothing closes the card. Play the links brings the words in the order they were saved, about
+  one a second (2x, 4x), the line from the book first and then the zigzags, with a timeline to click to jump.
+  The layout is a small settling force simulation in Rust (`wordgraph.rs`, Android's constants, the same places each
+  time), worked out off the main thread; the page draws it on a canvas only when something moves (about 1 ms a frame
+  for 300 words).
+- The synonym index comes inside the app (`src-tauri/resources/katana-synonyms-en.sqlite`, 2.4 MB, Open English WordNet
+  2025, CC BY 4.0), so the graph joins words before the dictionaries are downloaded.
 
-The dictionary files are made once by `tools/build-dictionary.py` (see its notes) and published with the app's releases.
+The dictionary files are made once by `tools/build-dictionary.py` (see its notes) and published with the app's releases;
+its `synonyms` step makes the graph's index from Katana's English pack.
 
 ## PDF, DjVu and comics
 

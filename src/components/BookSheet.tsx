@@ -127,7 +127,7 @@ export function BookSheet({ book }: { book: Book }) {
           <i className="ms">folder</i>On this PC
         </span>
         {gid != null && (
-          <span className="pill tone" style={{ height: 30, fontSize: 12.5 }} title="The same file is on Grimmory: its reading place syncs with the Fire">
+          <span className="pill tone" style={{ height: 30, fontSize: 12.5 }} title="The same file is on Grimmory: its reading place syncs with your other devices">
             <i className="ms">cloud_done</i>
             {book.placeState === "pending" ? "Place syncing…" : book.syncedAt ? `Synced ${fmtAgo(book.syncedAt)}` : "On Grimmory too"}
           </span>

@@ -16,6 +16,7 @@ mod peer;
 mod reads;
 mod resumable;
 mod search;
+mod wordgraph;
 mod words;
 
 use db::{Book, Folder};
@@ -405,6 +406,25 @@ fn words_list(lib: State<Library>, book_id: Option<i64>) -> Res<Vec<words::Word>
     words::list(&conn, book_id).map_err(err)
 }
 
+/// My words as a graph: every book's words (`book` none) or one book's (`b:<id>`, or `t:<title>` for a book
+/// not in the library), laid out off the main thread, synonyms from the index in the app's resources.
+#[tauri::command]
+async fn words_graph(app: AppHandle, book: Option<String>) -> Res<wordgraph::Graph> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let lib = app.state::<Library>();
+        let (all, counts) = {
+            let conn = lib.db.0.lock().unwrap();
+            (words::list(&conn, None).map_err(err)?, wordgraph::counts(&conn).map_err(err)?)
+        };
+        let index = app.path().resolve("resources/katana-synonyms-en.sqlite", tauri::path::BaseDirectory::Resource).ok();
+        let senses = wordgraph::open_senses(index.as_deref());
+        let groups = senses.as_ref().map(|s| s.of_words(&all)).unwrap_or_default();
+        Ok(wordgraph::build(&all, &groups, book.as_deref(), &counts, senses.is_some()))
+    })
+    .await
+    .map_err(err)?
+}
+
 #[tauri::command]
 fn word_find(lib: State<Library>, word: String) -> Res<Option<words::Word>> {
     let conn = lib.db.0.lock().unwrap();
@@ -775,6 +795,8 @@ pub fn run() {
             reader_prefs,
             set_book_prefs,
             words_list,
+            grimmory::finder::grimmory_find,
+            words_graph,
             word_find,
             word_save,
             word_remove,

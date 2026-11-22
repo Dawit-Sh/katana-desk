@@ -55,6 +55,9 @@ jobs:
       # copies PDF.js's files into public/, type-checks and builds the screens
       - run: npm run build
 
+      # the words graph's arithmetic and where the app opens (Node's own test runner)
+      - run: npm test
+
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test --locked

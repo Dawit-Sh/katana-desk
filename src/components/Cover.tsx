@@ -32,8 +32,11 @@ const hash = (s: string) => {
   return h >>> 0;
 };
 
+/** A drawn cover's colours for a title and author: [from, to, text]. */
+export const paletteOf = (title: string, author: string | null) => PALETTE[hash(title + (author ?? "")) % PALETTE.length];
+
 export const coverColors = (b: Book) => {
-  const [c1, c2, ct] = PALETTE[hash(b.title + (b.author ?? "")) % PALETTE.length];
+  const [c1, c2, ct] = paletteOf(b.title, b.author);
   return { "--c1": c1, "--c2": c2, "--ct": ct } as React.CSSProperties;
 };
 

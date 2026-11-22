@@ -39,11 +39,23 @@ const label = (f: number | null, readable: boolean, fmt: string) => {
 export function SignIn() {
   const g = useStore((s) => s.g);
   const setG = useStore((s) => s.setG);
-  const [url, setUrl] = useState(g?.url ?? "http://192.168.100.100:6060");
+  const [url, setUrl] = useState(g?.url ?? "");
   const [user, setUser] = useState(g?.user ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Grimmory on this network, looked for by itself when there's no address yet (or on Look for it)
+  const [looking, setLooking] = useState<"no" | "looking" | "found" | "missing">("no");
+  const typed = useRef(false);
+  const look = useCallback(async (saved: string | null) => {
+    setLooking("looking");
+    const found = await grimmory.find(saved).catch(() => null);
+    if (found && !typed.current) setUrl(found);
+    setLooking(found ? "found" : "missing");
+  }, []);
+  useEffect(() => {
+    if (!(g?.url ?? "").trim()) look(null);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -66,11 +78,34 @@ export function SignIn() {
         <p>
           {g?.signedOut
             ? "Grimmory signed this PC out. Your books and places here are safe; sign in to sync again."
-            : "Your whole library on the Zima, with the reading place shared with the Fire. Your password goes to Grimmory once and isn't kept."}
+            : "Your whole Grimmory library on this PC, with the reading place shared with your other devices. Your password goes to Grimmory once and isn't kept."}
         </p>
       </div>
       <label className="field">Server
-        <input value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} autoComplete="url" />
+        <span className="srvrow">
+          <input
+            value={url}
+            placeholder="http://192.168.1.20:6060"
+            onChange={(e) => {
+              typed.current = true;
+              setUrl(e.target.value);
+            }}
+            spellCheck={false}
+            autoComplete="url"
+          />
+          <button type="button" className="pill tone" disabled={looking === "looking"} title="Look for Grimmory on this network" onClick={() => {
+            typed.current = false;
+            look(url.trim() || null);
+          }}>
+            {looking === "looking" ? <Spinner /> : <i className="ms">travel_explore</i>}
+            Look for it
+          </button>
+        </span>
+        {looking === "looking" && <small className="srvnote">Looking for Grimmory on this network…</small>}
+        {looking === "found" && <small className="srvnote ok">Found Grimmory at {url.replace(/^https?:\/\//, "")}</small>}
+        {looking === "missing" && (
+          <small className="srvnote">Grimmory wasn't found on this network. Type its address, like http://192.168.1.20:6060 (the address you open it at in a browser).</small>
+        )}
       </label>
       <label className="field">Username
         <input value={user} onChange={(e) => setUser(e.target.value)} spellCheck={false} autoComplete="username" autoFocus={!user} />

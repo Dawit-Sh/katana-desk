@@ -13,6 +13,7 @@
 - **Local folders too.** Point it at the folders where your books already live. It reads them in place, keeps the folder structure, and notices new books by itself.
 - **Highlights and notes** in five colours and four styles (highlight, underline, strike, squiggle), in books and PDFs alike, with a marks panel and Markdown export.
 - **Offline dictionaries built in.** Double-click any word for its meaning from English Wiktionary and WordNet, save it to My words, and go over your words later as flashcards. Your own StarDict dictionaries work too.
+- **Your words as a graph.** My words shows every book with the words you saved from it around it, and words that mean the same joined across books. Zoom from covers to the whole map, hover a word to light up its synonyms, and play back how your words met, in the order you saved them.
 - **A reading view that gets out of the way.** Bars fade while you read, panels float or pin to the side, one or two pages or scroll, and a full text panel (fonts, size, spacing, margins, page colours).
 - **A Journal** of your reading: a year of reading days, streaks, books finished, when you read, and how your words are coming along.
 - **Ctrl K finds anything:** books, authors, highlights, notes, bookmarks and words, across all your books.
@@ -80,7 +81,7 @@ Katana Desk stands on a lot of good work:
 - [PDF.js](https://github.com/mozilla/pdf.js) for PDF (Apache-2.0)
 - [DjVuLibre](https://djvu.sourceforge.net/) for DjVu, built in from source (GPL-2.0-or-later)
 - English [Wiktionary](https://en.wiktionary.org) through [wiktextract](https://github.com/tatuylonen/wiktextract) and [kaikki.org](https://kaikki.org) (CC BY-SA 4.0)
-- [Open English WordNet](https://github.com/globalwordnet/english-wordnet) (CC BY 4.0)
+- [Open English WordNet](https://github.com/globalwordnet/english-wordnet) (CC BY 4.0), also inside the app as the words graph's synonym index
 - [Open Library](https://openlibrary.org) for finding covers online
 - Fonts: Literata, Source Serif, Noto Serif, Manrope and Atkinson Hyperlegible (all SIL Open Font License), and Material Symbols (Apache-2.0)
 - [Readest](https://github.com/readest/readest) for ideas on how a Tauri reader can feel (no code taken)

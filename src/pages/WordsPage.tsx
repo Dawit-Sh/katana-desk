@@ -1,14 +1,40 @@
 // My words: every word saved from the word card, newest first, with its meaning from the built-in
 // dictionary, the sentence it was met in and the book. A row opens the full entry, the note, and the
-// way back to the sentence. Review cards, search, a book filter and Markdown export.
+// way back to the sentence. Review cards, search, a book filter and Markdown export. List | Graph: the
+// graph (components/WordGraph.tsx) shows the words round their books, words of the same meaning joined.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useStore } from "../lib/store";
+import { api } from "../lib/api";
 import { fmtWhen } from "../lib/format";
 import { Entries, posName, useDictStatus } from "../components/DictView";
 import { Review } from "../components/Review";
+import { WordGraph } from "../components/WordGraph";
 import { SentenceQ, wordMatches } from "../reader/wordlist";
 import { dict, exportWords, isDue, learning, words, type Lookup, type Word } from "../lib/words";
+
+type View = "list" | "graph";
+
+/** List | Graph, kept for next time. */
+function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  return (
+    <div className="seg wview" role="radiogroup" aria-label="View">
+      <button type="button" role="radio" aria-checked={view === "list"} className={view === "list" ? "on" : ""} title="The words as a list" onClick={() => onChange("list")}>
+        <i className="ms">view_list</i>List
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={view === "graph"}
+        className={view === "graph" ? "on" : ""}
+        title="The words round their books, words of the same meaning joined"
+        onClick={() => onChange("graph")}
+      >
+        <i className="ms">hub</i>Graph
+      </button>
+    </div>
+  );
+}
 
 function Detail({ w, onRemove, onNote }: { w: Word; onRemove: () => void; onNote: (n: string | null) => void }) {
   const open = useStore((s) => s.open);
@@ -86,16 +112,38 @@ function Detail({ w, onRemove, onNote }: { w: Word; onRemove: () => void; onNote
 }
 
 export function WordsPage() {
+  const open = useStore((s) => s.open);
   const [list, setList] = useState<Word[] | null>(null);
   const [q, setQ] = useState("");
   const [book, setBook] = useState<number | "all">("all");
   const [openId, setOpenId] = useState<number | null>(null);
-  const [review, setReview] = useState(false);
+  const [review, setReview] = useState<false | true | Word>(false);
   const [msg, setMsg] = useState<{ text: string; undo?: () => void } | null>(null);
+  const [view, setView] = useState<View | null>(null);
+  const [version, setVersion] = useState(0);
+  const [seek, setSeek] = useState(0);
   const [st] = useDictStatus();
   const installed = st?.builtin.filter((b) => b.installed).length ?? 0;
+  useEffect(() => {
+    api
+      .getSetting("words.view")
+      .then((v) => setView(v === "graph" ? "graph" : "list"))
+      .catch(() => setView("list"));
+  }, []);
+  const changeView = (v: View) => {
+    setView(v);
+    api.setSetting("words.view", v).catch(() => {});
+  };
 
-  const load = useCallback(() => words.list().then(setList).catch(() => setList([])), []);
+  const load = useCallback(
+    () =>
+      words
+        .list()
+        .then(setList)
+        .catch(() => setList([]))
+        .finally(() => setVersion((n) => n + 1)),
+    [],
+  );
   useEffect(() => {
     // words saved before the dictionaries came get their meanings now
     words
@@ -136,28 +184,47 @@ export function WordsPage() {
 
   if (list && !list.length)
     return (
-      <div className="scroll">
-        <div className="soon">
-          <i className="ms">dictionary</i>
-          <b>My words</b>
-          <p>
-            Double-click a word while you read, or select it and press <kbd>L</kbd>. The word card shows what it means, and Save to My
-            words keeps it here with its sentence and book, for review cards later.
-          </p>
+      <div className={`scroll ${view === "graph" ? "wgpage" : ""}`}>
+        <div className="sech">
+          <span className="h">My words</span>
+          <div className="pills">{view && <ViewToggle view={view} onChange={changeView} />}</div>
         </div>
+        {view === "graph" ? (
+          <WordGraph book="all" query="" seek={0} version={version} active onAllBooks={() => {}} onOpen={() => {}} onReview={() => {}} />
+        ) : (
+          <div className="soon">
+            <i className="ms">dictionary</i>
+            <b>My words</b>
+            <p>
+              Double-click a word while you read, or select it and press <kbd>L</kbd>. The word card shows what it means, and Save to My
+              words keeps it here with its sentence and book, for review cards later.
+            </p>
+          </div>
+        )}
       </div>
     );
 
+  const graph = view === "graph";
   return (
-    <div className="scroll">
+    <div className={`scroll ${graph ? "wgpage" : ""}`}>
       <div className="sech">
         <span className="h">
           My words<span className="c">{list?.length ?? ""}</span>
         </span>
         <div className="pills">
+          {view && <ViewToggle view={view} onChange={changeView} />}
           <div className="sfield wsearch">
             <i className="ms">search</i>
-            <input value={q} placeholder="Search words" aria-label="Search words" onChange={(e) => setQ(e.target.value)} />
+            <input
+              value={q}
+              placeholder="Search words"
+              aria-label="Search words"
+              title={graph ? "Words that don't match fade; Enter goes to the first one" : undefined}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && graph) setSeek((n) => n + 1);
+              }}
+            />
             {q && (
               <button type="button" className="clear" aria-label="Clear" onClick={() => setQ("")}>
                 <i className="ms">close</i>
@@ -207,6 +274,22 @@ export function WordsPage() {
           </button>
         </div>
       )}
+      {graph ? (
+        <WordGraph
+          book={book}
+          query={q}
+          seek={seek}
+          version={version}
+          active={!review}
+          onAllBooks={() => setBook("all")}
+          onOpen={(w) => {
+            if (w.bookId == null) return;
+            learning.revisit("word", w.uuid, w.bookId);
+            open(w.bookId, w.cfi);
+          }}
+          onReview={(w) => setReview(w)}
+        />
+      ) : (
       <div className="wt" role="table">
         <div className="hd" role="row">
           <span>Word and meaning</span>
@@ -222,9 +305,9 @@ export function WordsPage() {
                 {w.pos && <em> {posName(w.pos)}</em>}
                 <span className="def">{w.meaning ?? (st?.builtin.some((b) => !b.installed) ? "Meaning shows once the dictionaries are here" : "")}</span>
               </span>
-              <span className="s">{w.sentence ? <SentenceQ w={w} /> : "—"}</span>
+              <span className="s">{w.sentence ? <SentenceQ w={w} /> : ""}</span>
               <span className="b">
-                {w.bookTitle ?? "—"}
+                {w.bookTitle ?? ""}
                 {w.pageLabel ? ` · p. ${w.pageLabel}` : ""}
               </span>
               <span className="d">{fmtWhen(w.createdAt).replace(/, \d.*$/, "")}</span>
@@ -243,9 +326,11 @@ export function WordsPage() {
         ))}
         {list && !shown.length && <div className="empty wempty">Nothing matches.</div>}
       </div>
+      )}
       {review && (
         <Review
           bookId={book === "all" ? null : book}
+          word={review === true ? undefined : review}
           onClose={() => {
             setReview(false);
             load();

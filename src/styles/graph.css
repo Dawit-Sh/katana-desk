@@ -1,0 +1,147 @@
+/* My words as a graph: the night-sky ground, the chips and controls floating on glass, the word card.
+   From the words-graph canvas (graph.dc.html). The graph itself is drawn on the canvas (WordGraph.tsx), in
+   the colours below and the theme's. Shape rule: card 20 - padding 16 = 4 inside; pills and chips round. */
+
+.wg { --g-learning: #e4b8a7; --g-synl: rgba(183, 199, 217, .55); --g-glow: rgba(120, 150, 190, .11); --g-dust: rgba(220, 230, 245, .38); --g-vig: rgba(0, 0, 0, .42) }
+:root[data-tone="light"] .wg { --g-learning: #a0605d; --g-synl: rgba(64, 95, 107, .55); --g-glow: rgba(64, 95, 107, .07); --g-dust: rgba(90, 70, 50, .22); --g-vig: rgba(120, 90, 60, .10) }
+
+/* the page: the header, then the graph filling the rest; one book has its card at the side */
+.scroll.wgpage { overflow: hidden; padding-bottom: 24px }
+.wg { flex: 1; min-height: 320px; display: flex; gap: 16px; min-width: 0 }
+.wgpanel {
+  position: relative; flex: 1; min-width: 0; border-radius: 20px; overflow: hidden; background-color: var(--k-canvas);
+  background-image:
+    radial-gradient(1.2px 1.2px at 12% 18%, var(--g-dust), transparent), radial-gradient(1px 1px at 27% 72%, var(--g-dust), transparent),
+    radial-gradient(1.4px 1.4px at 41% 9%, var(--g-dust), transparent), radial-gradient(1px 1px at 58% 88%, var(--g-dust), transparent),
+    radial-gradient(1.2px 1.2px at 73% 31%, var(--g-dust), transparent), radial-gradient(1px 1px at 86% 64%, var(--g-dust), transparent),
+    radial-gradient(1px 1px at 94% 12%, var(--g-dust), transparent), radial-gradient(1.3px 1.3px at 6% 52%, var(--g-dust), transparent),
+    radial-gradient(1px 1px at 35% 44%, var(--g-dust), transparent), radial-gradient(1px 1px at 66% 56%, var(--g-dust), transparent),
+    radial-gradient(1.1px 1.1px at 50% 26%, var(--g-dust), transparent), radial-gradient(1px 1px at 19% 93%, var(--g-dust), transparent),
+    radial-gradient(1px 1px at 81% 90%, var(--g-dust), transparent), radial-gradient(1.2px 1.2px at 91% 41%, var(--g-dust), transparent),
+    radial-gradient(ellipse 70% 60% at 50% 45%, var(--g-glow), transparent 70%);
+}
+.wgpanel::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px var(--g-vig); border-radius: inherit; z-index: 1 }
+.wgpanel canvas { position: absolute; left: 0; top: 0; display: block; cursor: grab; touch-action: none; animation: gin .9s ease-out backwards }
+.wgpanel.point canvas { cursor: pointer }
+.wgpanel.grabbing canvas { cursor: grabbing }
+@keyframes gin { from { opacity: 0 } }
+.wgwait { position: absolute; inset: 0; display: grid; place-items: center; color: var(--k-var) }
+.wgerr { margin: 24px; color: var(--k-var) }
+.wgempty { position: absolute; inset: 0; margin: auto; height: fit-content; max-width: 420px; padding: 0 24px; display: grid; justify-items: center; text-align: center; gap: 10px; color: var(--k-var); z-index: 2 }
+.wgempty .ms { font-size: 48px; color: var(--k-var) }
+.wgempty b { color: var(--k-on); font-size: 20px; font-weight: 600 }
+.wgempty p { margin: 0; line-height: 1.5 }
+
+/* the state dots: learned filled in the accent, learning in the second colour, new hollow */
+.gd { display: inline-block; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; flex: none }
+.gd.learned { background: var(--k-pri) }
+.gd.learning { background: var(--g-learning) }
+.gd.new { background: transparent; border: 1.5px solid var(--k-out) }
+.zg { width: 22px; height: 10px; overflow: visible; flex: none }
+.zg path { fill: none; stroke: var(--g-synl); stroke-width: 1.5; stroke-linejoin: round }
+
+/* chips and controls on glass, at the corners */
+.gctl { position: absolute; z-index: 3 }
+.gtl { left: 12px; top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; right: 12px; pointer-events: none }
+.gtl > * { pointer-events: auto }
+.gbl { left: 12px; bottom: 12px }
+/* a narrow graph: the legend gives way to the controls (the filter chips carry the same dots) */
+.wgpanel { container-type: size }
+@container (max-width: 800px) { .gbl { display: none } }
+@container (max-width: 560px) { .gplay .pl:not(.num) { display: none } .gseg button { padding: 0 8px } }
+.gbr { right: 12px; bottom: 12px; display: flex; gap: 8px; align-items: center }
+.pill.glass { background: var(--k-glass); border-color: transparent; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px) }
+.pill.glass:hover { background: color-mix(in srgb, var(--k-glass) 80%, var(--k-on)) }
+.pill.glass.on { background: var(--k-pric); color: var(--k-onpric) }
+.gseg { display: flex; gap: 2px; padding: 4px; border-radius: 12px; background: var(--k-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px) }
+.gseg button { height: 28px; padding: 0 10px; border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--k-var) }
+.gseg button:hover { color: var(--k-on) }
+.gseg button.on { background: var(--k-pric); color: var(--k-onpric) }
+.gseg button.on .gd.new { border-color: var(--k-onpric) }
+.gleg { display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 14px; border-radius: 12px; background: var(--k-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font-size: 12px; color: var(--k-var) }
+.gleg span { display: flex; align-items: center; gap: 6px }
+.gz { display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: var(--k-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px) }
+.gz button { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; color: var(--k-on) }
+.gz button:hover { background: var(--k-cap-hover) }
+.gz button .ms { font-size: 20px }
+.gz .lv { font-size: 12px; font-weight: 600; color: var(--k-var); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums }
+.gplay { display: flex; align-items: center; gap: 8px; height: 40px; padding: 4px 12px 4px 4px; border-radius: 999px; background: var(--k-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px) }
+.gplay .pb { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; background: var(--k-pri); color: var(--k-onpri); flex: none }
+.gplay .pb .ms { font-size: 22px; font-variation-settings: "FILL" 1 }
+.gplay .pb:hover { background: color-mix(in srgb, var(--k-pri) 88%, var(--k-on)) }
+.gplay .pl { font-size: 12.5px; font-weight: 600; white-space: nowrap }
+.gplay .num { font-variant-numeric: tabular-nums; color: var(--k-var); font-weight: 500; min-width: 58px }
+.gplay .ptrack { position: relative; width: 120px; height: 20px; border-radius: 999px; display: block; flex: none; cursor: pointer }
+.gplay .ptrack::before { content: ""; position: absolute; left: 0; right: 0; top: 9px; height: 2px; border-radius: 2px; background: var(--k-outv) }
+.gplay .ptrack i { position: absolute; left: 0; top: 9px; height: 2px; border-radius: 2px; background: var(--k-on); transition: width .4s }
+.gplay .ptrack b { position: absolute; top: 6px; width: 1.5px; height: 8px; border-radius: 1px; background: var(--k-out) }
+.gplay .spd { height: 24px; min-width: 30px; padding: 0 6px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--k-var); background: var(--k-sch) }
+.gplay .spd:hover { color: var(--k-on) }
+
+/* Play's caption: when the word was saved, the word, its book, and the words it met */
+.gtc { position: absolute; left: 50%; top: 60px; transform: translateX(-50%); z-index: 3; white-space: nowrap; max-width: calc(100% - 24px) }
+.gcap { height: 34px; padding: 0 14px; border-radius: 999px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--k-var); background: var(--k-glass); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); animation: capin .45s ease-out both; overflow: hidden }
+@keyframes capin { from { opacity: 0; transform: translateY(-4px) } }
+.gcap .cdt { font-weight: 600; color: var(--k-on); font-variant-numeric: tabular-nums }
+.gcap .cwd { font: 600 14px var(--font-book); color: var(--k-on) }
+.gcap .zg path { stroke: var(--k-on) }
+@media (prefers-reduced-motion: reduce) { .wgpanel canvas, .gcap { animation: none } }
+
+/* the word card: floating at the top right on every book, at the side on one book */
+.gcard { display: flex; flex-direction: column; gap: 10px; background: var(--k-sc); border-radius: 20px; padding: 20px; box-sizing: border-box; z-index: 4; min-height: 0; user-select: text; cursor: auto }
+.gcard.float { position: absolute; top: 12px; right: 12px; width: 320px; max-height: calc(100% - 24px - 52px); background: var(--k-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 8px 24px var(--k-shadow) }
+.gcard.side { flex: none; width: 320px; overflow: hidden }
+.gcard .ch { display: flex; align-items: flex-start; gap: 10px; flex: none }
+.gcard .cwb { min-width: 0; flex: 1 }
+.gcard .cw { font: 600 26px/1.15 var(--font-book); color: var(--k-on); overflow-wrap: anywhere }
+.gcard .cpr { font-size: 13px; color: var(--k-dim); margin-top: 3px }
+.gcard .tag { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 8px; background: var(--k-sch); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; margin-top: 2px }
+.gcard .x { width: 32px; height: 32px; border-radius: 999px; display: grid; place-items: center; color: var(--k-var); flex: none; margin: -3px -6px 0 -4px }
+.gcard .x:hover { background: var(--k-cap-hover); color: var(--k-on) }
+.gcard .cbody { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; margin-right: -10px; padding-right: 10px }
+.gcard .cbody::-webkit-scrollbar { width: 6px }
+.gcard .cbody::-webkit-scrollbar-thumb { background: var(--k-schh); border-radius: 3px }
+.gcard .cbody::-webkit-scrollbar-button { display: none; height: 0 }
+.gcard .cmean { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--k-var) }
+.gcard .cq { margin: 0; font: 13.5px/1.55 var(--font-book); color: var(--k-var) }
+.gcard .cq b { color: var(--k-on); font-weight: 600 }
+.gcard .cmeta { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--k-var); line-height: 1.35 }
+.gcard .mini { width: 14px; height: 21px; border-radius: 1px 2px 2px 1px; flex: none }
+.gcard .cnums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px }
+.gcard .cnums div { background: var(--k-sch); border-radius: 12px; padding: 7px 9px; font-size: 11px; line-height: 1.25; color: var(--k-var) }
+.gcard .cnums b { display: block; font-size: 19px; font-weight: 600; color: var(--k-on); font-variant-numeric: tabular-nums }
+.gcard .crev { font-size: 12px; color: var(--k-dim); margin-top: -4px }
+.gcard .csh { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--k-var) }
+.gcard .csh .zg path { stroke: var(--k-on) }
+.gcard .cchips { display: flex; flex-wrap: wrap; gap: 6px }
+.gcard .cchip { display: inline-flex; align-items: center; gap: 6px; height: 30px; max-width: 100%; padding: 0 12px 0 10px; border-radius: 999px; background: var(--k-sch); min-width: 0 }
+.gcard .cchip:hover { background: var(--k-schh) }
+.gcard .cchip .cs { font: 500 14px var(--font-book); white-space: nowrap }
+.gcard .cchip .cbk { font-size: 11.5px; color: var(--k-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.gcard .none { margin: 0; font-size: 13px; color: var(--k-dim); line-height: 1.45 }
+.gcard .cact { display: flex; gap: 8px; flex-wrap: wrap; flex: none }
+.gcard .cact .pill:disabled { opacity: .5; cursor: default }
+.gcard .cact .pill:disabled:hover { background: var(--k-pri) }
+/* one book's card when no word is picked: the book and how far its words are */
+.gcard.sum { gap: 16px }
+.gcard .sumh { display: flex; gap: 14px; align-items: flex-end }
+.gcard .sumh .cv.m { box-shadow: 0 4px 14px var(--k-shadow) }
+.gcard .sumcv { width: 72px; height: 108px; border-radius: 2px 5px 5px 2px; flex: none }
+.gcard .sumt { display: grid; gap: 4px; min-width: 0 }
+.gcard .sumt b { font: 600 20px/1.2 var(--font-book); color: var(--k-on); overflow-wrap: anywhere }
+.gcard .sumt small { font-size: 13px; color: var(--k-var) }
+.gcard .srows { display: grid }
+.gcard .srow { display: flex; align-items: center; gap: 10px; height: 36px; font-size: 14px; border-bottom: 1px solid var(--k-outv) }
+.gcard .srow b { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums }
+.gcard .tip { margin: 0; font-size: 13px; color: var(--k-dim); line-height: 1.5 }
+
+/* List | Graph in My words' header */
+.seg.wview > button { height: 28px; padding: 0 10px; display: flex; gap: 6px; font-size: 13px; font-weight: 500 }
+.wnone { color: var(--k-var); margin: 8px 0 0; max-width: 520px; line-height: 1.5 }
+
+/* narrower windows: the one-book card goes over the graph's right side */
+@media (max-width: 1100px) {
+  .wg.book { position: relative }
+  .wg.book > .gcard.side { position: absolute; right: 12px; top: 12px; bottom: 12px; width: 300px; background: var(--k-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: 0 8px 24px var(--k-shadow) }
+  .wg.book > .gcard.side.sum { display: none }
+}

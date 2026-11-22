@@ -103,6 +103,8 @@ export const grimmory = {
   signOut: () => invoke<void>("grimmory_sign_out"),
   setUrl: (url: string) => invoke<GStatus>("grimmory_set_url", { url }),
   check: () => invoke<boolean>("grimmory_check"),
+  /** Grimmory's address on this PC's network (the saved one first), or null when it isn't found */
+  find: (saved: string | null) => invoke<string | null>("grimmory_find", { saved }),
   catalog: () => invoke<Catalog>("grimmory_catalog"),
   sync: (full: boolean) => invoke<void>("grimmory_sync", { full }),
   downloads: () => invoke<Dl[]>("grimmory_downloads"),

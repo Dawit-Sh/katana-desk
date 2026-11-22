@@ -602,10 +602,19 @@ pub async fn grimmory_set_status(app: AppHandle, gid: i64, status: String) -> Re
         .flatten()
         .unwrap_or(false);
     let body = serde_json::json!({ "bookIds": [gid], "status": status });
-    let resp = send(&app, move |c, base, tok| c.post(format!("{base}/api/v1/books/status")).bearer_auth(tok).json(&body))
-        .await
-        .map_err(String::from)?;
-    let now_status = status_answer(resp, &status).await.map_err(String::from)?;
+    let now_status = match send(&app, move |c, base, tok| c.post(format!("{base}/api/v1/books/status")).bearer_auth(tok).json(&body)).await {
+        Ok(resp) => {
+            let s = status_answer(resp, &status).await.map_err(String::from)?;
+            super::status_sync::sent(&app, gid);
+            s
+        }
+        // Grimmory can't be reached: the status is kept here and goes up when it answers again
+        Err(GErr::Offline(_)) => {
+            super::status_sync::wait(&app, gid, &status);
+            status.clone()
+        }
+        Err(e) => return Err(e.into()),
+    };
     let _ = conn_of(&app).execute("UPDATE gbooks SET read_status = ?2 WHERE id = ?1", params![gid, now_status]);
     if now_status == "READ" {
         // the day it was finished, for the copies here (a phone on this Wi-Fi reads it as dateFinished)

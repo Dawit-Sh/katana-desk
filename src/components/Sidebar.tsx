@@ -9,6 +9,7 @@ import { useUpdates } from "../lib/updates";
 import { api, type ReadingDays } from "../lib/api";
 import { DayTip, HeatKey, heatLevel, useGoal } from "../lib/heat";
 import { dict, words, type Word } from "../lib/words";
+import { wordState } from "../lib/graphview";
 import { Cover } from "./Cover";
 import { Review } from "./Review";
 import "../styles/reading-card.css";
@@ -196,7 +197,8 @@ function useWordOfDay() {
   return { w, meaning, count: list?.length ?? 0, known: !!w && known.has(w.id), another, know, reload: load };
 }
 
-const stateOf = (w: Word) => (w.learnedAt ? "learned" : w.reviewedAt ? "learning" : "new");
+// how far a word is learned, by the same rule as My words' graph and Katana on Android
+const stateOf = (w: Word) => wordState(w);
 const STATE_NAME = { new: "New, not reviewed yet", learning: "Learning", learned: "Learned" };
 
 function WordCard({ wod, meaning, onReview }: { wod: ReturnType<typeof useWordOfDay>; meaning: boolean; onReview: (w: Word) => void }) {

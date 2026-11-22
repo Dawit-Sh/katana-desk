@@ -281,6 +281,12 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .field input { height: 44px; border-radius: 16px; background: var(--k-bg); border: 1px solid var(--k-outv); padding: 0 16px; font-size: 15px; font-weight: 400; color: var(--k-on); user-select: text }
 .field input:focus { border-color: var(--k-pri); outline: 1px solid var(--k-pri) }
 .signin .pill.fill { height: 44px; justify-content: center; margin-top: 4px }
+.srvrow { display: flex; gap: 8px; align-items: center }
+.srvrow input { flex: 1; min-width: 0 }
+.srvrow .pill { height: 44px; flex: none; padding: 0 14px }
+.srvrow .pill:disabled { opacity: .7 }
+.srvnote { font-weight: 400; font-size: 12.5px; line-height: 1.45; color: var(--k-var) }
+.srvnote.ok { color: var(--k-tint) }
 .err { color: #e6837a; font-size: 13px; line-height: 1.45 }
 :root[data-theme="paper"] .err { color: #b3261e }
 /* downloads */

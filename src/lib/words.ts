@@ -83,6 +83,20 @@ export type NewWord = {
   pos: string | null;
 };
 
+/** A word on My words' graph: the saved word, where the layout put it, how far it is learned. */
+export type GraphWord = Word & {
+  bookKey: string;
+  state: "learned" | "learning" | "new";
+  /** another book's word that means the same as one of the book's (the one-book graph), drawn faint */
+  ghost: boolean;
+  reviews: number;
+  lookedBack: number;
+  x: number;
+  y: number;
+};
+export type GraphBook = { key: string; bookId: number | null; title: string; author: string | null; x: number; y: number };
+export type WordGraphData = { book: string | null; books: GraphBook[]; words: GraphWord[]; links: [number, number][]; synonyms: boolean };
+
 export const dict = {
   lookup: (word: string) => invoke<Lookup>("dict_lookup", { word }),
   status: () => invoke<DictStatus>("dict_status"),
@@ -99,6 +113,8 @@ export const dict = {
 
 export const words = {
   list: (bookId: number | null = null) => invoke<Word[]>("words_list", { bookId }),
+  /** every book's words (`book` null) or one book's (`b:<id>`), laid out, with the links between them */
+  graph: (book: string | null) => invoke<WordGraphData>("words_graph", { book }),
   find: (word: string) => invoke<Word | null>("word_find", { word }),
   save: (w: NewWord) => invoke<Word>("word_save", { w }),
   remove: (id: number) => invoke<Word | null>("word_remove", { id }),
