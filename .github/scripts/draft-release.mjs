@@ -12,6 +12,12 @@ if (process.env.GITHUB_REF_TYPE === "tag" && process.env.GITHUB_REF_NAME !== tag
 
 const all = await releases();
 if (all.some((r) => r.tag_name === tag && !r.draft)) {
+  // publishing a draft creates its tag, and that tag's push lands here: nothing to build, all done
+  if (process.env.GITHUB_EVENT_NAME === "push" && process.env.GITHUB_REF_TYPE === "tag") {
+    console.log(`${tag} is published already (its tag came from publishing it): nothing to build.`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `skip=true\nversion=${version}\n`);
+    process.exit(0);
+  }
   throw new Error(`${tag} is already published. Raise the version for a new release.`);
 }
 

@@ -23,6 +23,8 @@ jobs:
     outputs:
       id: ${{ steps.draft.outputs.id }}
       version: ${{ steps.draft.outputs.version }}
+      # true for the tag a publish creates: the release is out already, nothing to build
+      skip: ${{ steps.draft.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
       - id: draft
@@ -34,6 +36,7 @@ jobs:
   build:
     name: ${{ matrix.name }}
     needs: draft
+    if: needs.draft.outputs.skip != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -87,6 +90,7 @@ jobs:
   updater:
     name: latest.json
     needs: [draft, build]
+    if: needs.draft.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
