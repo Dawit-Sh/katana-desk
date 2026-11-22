@@ -1,6 +1,14 @@
-A fix for the new sidebar: the reading card and the word of the day now stay inside it.
+My words as a graph, and Grimmory sync that keeps up in the background.
 
 ## New in __VERSION__
+
+- **The words graph.** My words has a Graph view beside the list: each book with the words you saved from it around it, and words that mean the same joined by a zigzag, across books too. Zoom out and the books become small rectangles, zoom in and they're covers again. Hover a word to light up its synonyms, click it for its meaning, sentence and reviews, Open in book or Review it. Pick one book to see its cover in the middle and its words round it. Play the links brings your words in the order you saved them.
+- **Grimmory keeps up in the background**, whichever page is open, and catches up as soon as it's back after being away (it used to wait up to half an hour).
+- **Reading statuses both ways.** A status changed on Grimmory's site or on your phone shows here (a book marked Unread there loses its place here too), and one set here while Grimmory is away goes up when it's back.
+- **Signing in finds Grimmory on your network by itself**, tries again while the network wakes up, and says plainly what to check when nothing answers.
+- Katana Desk never opens on Grimmory's sign-in when you only use Local books.
+
+## New in 0.2.1
 
 - The reading card no longer runs past its right edge (the progress bar, Journal › and the Less/More key spilled over on most screens). Its footer now reads "Goal 30 min" to fit; hover it for the whole goal.
 - The word of the day's → button is round again and sits in line with Review and I know it.
@@ -11,7 +19,7 @@ A fix for the new sidebar: the reading card and the word of the day now stay ins
 - **A new sidebar.** What you're reading is at the top now: today's reading time, the book you're on, and your reading days as a calendar. Days are coloured by a daily goal (30 minutes, change it in Settings › Reading defaults or the Journal). Hover a day to see how long you read, click it to see that day in the Journal. A word from My words sits above Settings, with Review, I know it, and another word.
 - A book you mark as Read keeps the day you finished it.
 
-If you have 0.1.0 or 0.2.0, it offers this update by itself (or Settings › About › Check for updates).
+If you have 0.1.0 or newer, it offers this update by itself (or Settings › About › Check for updates).
 
 ## Katana Desk
 
@@ -33,4 +41,4 @@ The Windows build and the AppImage check for updates once a day and ask before i
 
 ## Credits
 
-Wiktionary's text is CC BY-SA 4.0 (through [wiktextract](https://github.com/tatuylonen/wiktextract) and kaikki.org), Open English WordNet is CC BY 4.0. Books are drawn by [foliate-js](https://github.com/johnfactotum/foliate-js) (MIT), [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0) and [DjVuLibre](https://djvu.sourceforge.net/) (GPL-2.0-or-later). Katana Desk itself is GPL-3.0-or-later.
+Wiktionary's text is CC BY-SA 4.0 (through [wiktextract](https://github.com/tatuylonen/wiktextract) and kaikki.org), Open English WordNet is CC BY 4.0 (also inside the app, as the words graph's synonym index). Books are drawn by [foliate-js](https://github.com/johnfactotum/foliate-js) (MIT), [PDF.js](https://github.com/mozilla/pdf.js) (Apache-2.0) and [DjVuLibre](https://djvu.sourceforge.net/) (GPL-2.0-or-later). Katana Desk itself is GPL-3.0-or-later.
