@@ -1,5 +1,6 @@
 // Calls into the Rust side (src-tauri/src/lib.rs).
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import type { Dash } from "./dashboard";
 
 export type Folder = { id: number; path: string; name: string; addedAt: number };
 export type Book = {
@@ -91,6 +92,10 @@ export const api = {
   markOpened: (id: number) => invoke<void>("mark_opened", { id }),
   addReading: (seconds: number, bookId: number, pages: number) => invoke<void>("add_reading", { seconds, bookId, pages }),
   readingDays: () => invoke<ReadingDays>("reading_days"),
+  /** Local's reading dashboard: last marks, time left, places from a paired device, set aside, finished */
+  localDashboard: () => invoke<Dash>("local_dashboard"),
+  /** off Local's dashboard until the book is opened again (or back on it) */
+  setAside: (id: number, on: boolean) => invoke<void>("book_set_aside", { id, on }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
   reveal: (path: string) => invoke<void>("reveal", { path }),

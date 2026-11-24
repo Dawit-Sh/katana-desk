@@ -5,8 +5,11 @@ import { api, BOOK_EXTENSIONS, m7, READABLE, type Book } from "../lib/api";
 import { fmtTime, plural, progressLabel } from "../lib/format";
 import { useStore } from "../lib/store";
 import { listing, search } from "../lib/tree";
+import { inPlace, isScoped, reading, tileReading } from "../lib/dashboard";
 import { Cover, Peek } from "../components/Cover";
 import { BookSheet } from "../components/BookSheet";
+import { ReadingBand, useDash } from "../components/ReadingBand";
+import "../styles/dashboard.css";
 
 export async function addFolder() {
   const dir = await openDialog({ directory: true, multiple: false, title: "Add a folder of books" });
@@ -65,6 +68,7 @@ function BookCard({ book, selected }: { book: Book; selected: boolean }) {
           <i className="ms">more_horiz</i>
         </button>
       </div>
+      <div className={`ba ${book.author ? "" : "unk"}`}>{book.author ?? "Author unknown"}</div>
       <div className="bm">{progressLabel(book.fraction, readable, book.format)}</div>
     </div>
   );
@@ -137,6 +141,19 @@ export function LocalPage() {
   const selected = books.find((b) => b.id === selectedId);
   const empty = loaded && folders.length === 0 && books.length === 0;
 
+  // the reading band: all of Local at its top, the folder you're in inside one
+  const [dash, reloadDash] = useDash();
+  const r = useMemo(() => reading(books, dash, Date.now()), [books, dash]);
+  const at = useMemo(
+    () => ({ folderId: place.folderId ?? (folders.length === 1 ? folders[0].id : null), sub: place.sub }),
+    [place, folders],
+  );
+  const scoped = isScoped(at, folders);
+  const here = useMemo(() => (scoped ? books.filter((b) => inPlace(b, at)) : books), [books, at, scoped]);
+  const rHere = useMemo(() => (scoped ? reading(here, dash, Date.now()) : r), [scoped, here, dash, r]);
+  const scopeName = scoped ? (at.sub.length ? at.sub[at.sub.length - 1] : folders.find((f) => f.id === at.folderId)?.name ?? "") : null;
+  const quiet = useMemo(() => new Set(r.quiet.map((b) => b.id)), [r]);
+
   return (
     <>
       <div className={`scroll ${sheetOpen && selected ? "with-sheet" : ""}`}>
@@ -186,21 +203,43 @@ export function LocalPage() {
                 </span>
               ))}
             </nav>
+            <ReadingBand books={here} r={rHere} dash={dash} reload={reloadDash} folders={folders} scope={scopeName} />
             {l.tiles.length > 0 && (
-              <div className="folders">
-                {l.tiles.map((t) => (
-                  <button type="button" className="fbtn" key={t.name} onClick={() => goPlace(t.to)} title={`Open ${t.name}`}>
-                    <span className="fold">
-                      <span className="back" />
-                      {t.peek[0] && <Peek book={t.peek[0]} side="a" />}
-                      {t.peek[1] && <Peek book={t.peek[1]} side="b" />}
-                      <span className="front" />
-                    </span>
-                    <span className="fname">{t.name}</span>
-                    <span className="fcount">{t.count}</span>
-                  </button>
-                ))}
-              </div>
+              <>
+                <div className="glabel">Folders<span className="gc">{l.tiles.length.toLocaleString("en-US")}</span></div>
+                <div className="folders">
+                  {l.tiles.map((t) => {
+                    // the books being read in this folder peek out of it, and are listed under its name
+                    const tr = tileReading(r, t.to);
+                    const peeks = [...tr, ...t.peek.filter((p) => !tr.includes(p))].slice(0, 2);
+                    const pct = (b: Book) => Math.round((b.fraction ?? 0) * 100);
+                    const tip = tr.length ? ` · reading ${tr.map((b) => `${b.title} ${pct(b)}%`).join(", ")}` : "";
+                    return (
+                      <button type="button" className="fbtn" key={t.name} onClick={() => goPlace(t.to)} title={`Open ${t.name}${tip}`}>
+                        <span className="fold">
+                          <span className="back" />
+                          {peeks[0] && <Peek book={peeks[0]} side="a" progress={tr.includes(peeks[0])} />}
+                          {peeks[1] && <Peek book={peeks[1]} side="b" progress={tr.includes(peeks[1])} />}
+                          <span className="front" />
+                        </span>
+                        <span className="fname">{t.name}</span>
+                        <span className="fcount">{t.count}</span>
+                        {tr.length > 0 && (
+                          <span className="frl">
+                            {tr.slice(0, 2).map((b) => (
+                              <span className={`r ${quiet.has(b.id) ? "q" : ""}`} key={b.id}>
+                                <span className="rl"><span>{b.title}</span><span>{pct(b)}%</span></span>
+                                <span className="pbar"><i style={{ width: `${pct(b)}%` }} /></span>
+                              </span>
+                            ))}
+                            {tr.length > 2 && <span className="more">+{tr.length - 2} more</span>}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
             {l.label && <div className="glabel">{l.label}</div>}
             <div className="grid" ref={gridRef}>

@@ -427,6 +427,7 @@ function GCard({ b, selected }: { b: GBook; selected: boolean }) {
           <i className="ms">more_horiz</i>
         </button>
       </div>
+      <div className={`ba ${b.authors ? "" : "unk"}`}>{b.authors ?? "Author unknown"}</div>
       <div className="bm">{coming ? dlText(d) : label(p.fraction, readable, gFormat(b))}</div>
     </div>
   );
