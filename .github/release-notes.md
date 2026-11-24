@@ -1,6 +1,15 @@
-A reading dashboard on Local, Back on every page, Ctrl Z, quote cards, and pairing with Katana by its code alone.
+Books, My words and reading time sync both ways with Katana, and share cards get effects.
 
 ## New in __VERSION__
+
+- **Ctrl Z right after you make something takes it off.** A highlight, a bookmark or a word you just saved comes off with Ctrl Z, and Ctrl Y puts it back.
+- **Share card effects.** With the book's cover or your own picture behind a quote, pick an effect: None, Blur, Dither, Halftone, Grain, Mono, Duotone or Pixel.
+- **The books you're reading move both ways with Katana.** Every book you're reading here that Katana doesn't have goes to it, and every book you're reading in Katana comes here, into a "From <device>" folder in Local. Past 5 books at once, Katana asks first.
+- **Pair a device works with sync off.** Pressing it switches Sync on this Wi-Fi on and shows the code.
+- **My words sync** with Katana, both ways, for the books you have on both.
+- **Reading time both ways.** Time you read in Katana now counts in the Journal, the analytics, the dashboard and the book's own time here, and time you read here counts in Katana. Each session counts once.
+
+## New in 0.4.0
 
 - **A reading dashboard on Local.** "Pick up where you left off" sits at the top: the book you read last, large, with its chapter, your last note and the time left at your pace, the other books you have open beside it, and the ones gone quiet for two weeks (Set aside moves one off the band). Inside a folder it shows that folder's books. Folder cards are smaller and list the books you're reading in each, with how far you are. The author now shows under every cover. Hide folds the band to one line.
 - **Back.** ← Back in the title bar, beside the sidebar button, goes back a step from anywhere: a folder, a Settings section, a list, a book's page, a search, a Journal day. Alt ← and your mouse's back button do the same (in a book, they take you back to where you were before a jump).
