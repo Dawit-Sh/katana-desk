@@ -81,6 +81,21 @@ export async function removeMarks(marks: MarkRef[], where: string | null = null)
   }
 }
 export const removeHighlight = (h: Highlight) => removeMarks([{ kind: "hl", h }]);
+
+/**
+ * A highlight or bookmark just made (already saved by the caller): Ctrl Z takes it off again, Ctrl Y puts it
+ * back (his note, 2026-11-24: "if you want to remove the highlight, Control+Z").
+ */
+export function markAdded(m: MarkRef) {
+  const g: Gone = { m, read: null };
+  record({
+    label: m.kind === "bm" ? "Bookmarked" : "Highlighted",
+    back: m.kind === "bm" ? "Bookmark taken off" : "Highlight taken off",
+    detail: detailOf(m),
+    undo: () => takeAll([g]),
+    redo: () => putBackAll([g]),
+  });
+}
 export const removeBookmark = (b: Bookmark) => removeMarks([{ kind: "bm", b }]);
 export const removeMark = (m: MarkRef) => removeMarks([m]);
 
@@ -154,6 +169,23 @@ export function wordRemoved(gone: Word) {
     },
     redo: async () => {
       await wordsApi.remove(gone.id);
+      wordsChanged();
+    },
+  });
+}
+/** A word just saved to My words (already, by the caller): Ctrl Z takes it out again, Ctrl Y puts it back. */
+export function wordAdded(w: Word) {
+  let now = w;
+  record({
+    label: "Saved to My words",
+    back: "Word taken out of My words",
+    detail: quote(w.word),
+    undo: async () => {
+      await wordsApi.remove(now.id);
+      wordsChanged();
+    },
+    redo: async () => {
+      now = await wordsApi.restore(now);
       wordsChanged();
     },
   });

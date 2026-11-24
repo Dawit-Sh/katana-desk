@@ -1,6 +1,7 @@
 // Share as an image, drawing: the quote card on a canvas at its full size (1080 wide), the way Katana 1.2.5
 // draws it on Android (QuoteCard.kt, QuoteCardBackdrop.kt). The arithmetic is in quotecard.ts.
 import { loadUiFonts } from "../reader/prefs";
+import { DITHER_SCALE, INK_DARK, INK_LIGHT, dither, duotone, grain, halftoneDots, mono, pixelate, type Effect } from "./cardeffects";
 import {
   BACKDROP,
   BLUR_SIGMA,
@@ -27,8 +28,8 @@ const BRAND = "Katana";
 const KANJI = "刀";
 
 export type CardText = { quote: string; title: string; author: string | null };
-/** A picture behind the quote: the book's cover or your own, filling the card, blurred or sharp. */
-export type Backdrop = { image: ImageBitmap; blurred: boolean };
+/** A picture behind the quote: the book's cover or your own, filling the card, with an effect (Blur, Dither…). */
+export type Backdrop = { image: ImageBitmap; effect: Effect };
 
 /**
  * Loads the card's faces for these words. True when Literata's italic is there (it always is, it ships
@@ -84,32 +85,80 @@ function softened(image: ImageBitmap, w: number, h: number) {
   return out;
 }
 
-const softCache = new WeakMap<ImageBitmap, Map<string, HTMLCanvasElement>>();
-function softenedOnce(image: ImageBitmap, w: number, h: number) {
-  let m = softCache.get(image);
-  if (!m) softCache.set(image, (m = new Map()));
-  const k = `${w}x${h}`;
+/** The picture cropped to fill a `w` × `h` canvas (smoothed), and its pixels. */
+function cropped(image: ImageBitmap, w: number, h: number) {
+  const out = canvasOf(w, h);
+  const oc = out.getContext("2d", { willReadFrequently: true })!;
+  oc.imageSmoothingEnabled = true;
+  oc.imageSmoothingQuality = "high";
+  const c = fillCrop(image.width, image.height, w, h);
+  oc.drawImage(image, c.x, c.y, c.w, c.h, 0, 0, w, h);
+  return { out, oc, data: oc.getImageData(0, 0, w, h) };
+}
+
+const rgb = (c: readonly number[]) => `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+
+/** The picture with its effect, at the card's size (see cardeffects.ts and the shared spec). */
+function withEffect(image: ImageBitmap, effect: Effect, w: number, h: number): HTMLCanvasElement {
+  if (effect === "blur") return softened(image, w, h);
+  if (effect === "dither") {
+    const sw = Math.max(1, Math.round(w / DITHER_SCALE));
+    const sh = Math.max(1, Math.round(h / DITHER_SCALE));
+    const small = cropped(image, sw, sh);
+    dither(small.data.data, sw, sh);
+    small.oc.putImageData(small.data, 0, 0);
+    const out = canvasOf(w, h);
+    const oc = out.getContext("2d")!;
+    oc.imageSmoothingEnabled = false;
+    oc.drawImage(small.out, 0, 0, w, h);
+    return out;
+  }
+  const full = cropped(image, w, h);
+  if (effect === "halftone") {
+    const dots = halftoneDots(full.data.data, w, h);
+    full.oc.fillStyle = rgb(INK_LIGHT);
+    full.oc.fillRect(0, 0, w, h);
+    full.oc.fillStyle = rgb(INK_DARK);
+    full.oc.beginPath();
+    for (const d of dots) {
+      full.oc.moveTo(d.x + d.r, d.y);
+      full.oc.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    }
+    full.oc.fill();
+    return full.out;
+  }
+  if (effect === "grain") grain(full.data.data);
+  else if (effect === "mono") mono(full.data.data);
+  else if (effect === "duotone") duotone(full.data.data);
+  else if (effect === "pixel") pixelate(full.data.data, w, h);
+  if (effect !== "none") full.oc.putImageData(full.data, 0, 0);
+  return full.out;
+}
+
+const effectCache = new WeakMap<ImageBitmap, Map<string, HTMLCanvasElement>>();
+function withEffectOnce(image: ImageBitmap, effect: Effect, w: number, h: number) {
+  let m = effectCache.get(image);
+  if (!m) effectCache.set(image, (m = new Map()));
+  const k = `${effect} ${w}x${h}`;
   let c = m.get(k);
-  if (!c) m.set(k, (c = softened(image, w, h)));
+  if (!c) m.set(k, (c = withEffect(image, effect, w, h)));
   return c;
 }
 
-/** The picture cropped to fill the card, blurred if asked, then darkened so white text reads. */
+/** The picture cropped to fill the card, with its effect, then darkened so white text reads. */
 function drawBackdrop(ctx: CanvasRenderingContext2D, b: Backdrop, w: number, h: number) {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  if (b.blurred) ctx.drawImage(softenedOnce(b.image, w, h), 0, 0, w, h);
-  else {
-    const c = fillCrop(b.image.width, b.image.height, w, h);
-    ctx.drawImage(b.image, c.x, c.y, c.w, c.h, 0, 0, w, h);
-  }
-  ctx.fillStyle = `rgba(0, 0, 0, ${b.blurred ? BACKDROP.scrimBlurred : BACKDROP.scrimSharp})`;
+  ctx.drawImage(withEffectOnce(b.image, b.effect, w, h), 0, 0, w, h);
+  // None keeps today's sharp darkening (a cover's own title can show through); every effect the softer one
+  const sharp = b.effect === "none";
+  ctx.fillStyle = `rgba(0, 0, 0, ${sharp ? BACKDROP.scrimSharp : BACKDROP.scrimBlurred})`;
   ctx.fillRect(0, 0, w, h);
   // deeper at the foot, where the book line sits; deepest on a sharp picture, where a cover's own title often is
   const top = h * BACKDROP.footStart;
   const g = ctx.createLinearGradient(0, top, 0, h);
   g.addColorStop(0, "rgba(0, 0, 0, 0)");
-  g.addColorStop(1, `rgba(0, 0, 0, ${b.blurred ? BACKDROP.footBlurred : BACKDROP.footSharp})`);
+  g.addColorStop(1, `rgba(0, 0, 0, ${sharp ? BACKDROP.footSharp : BACKDROP.footBlurred})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, top, w, h - top);
 }

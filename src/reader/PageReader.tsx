@@ -18,7 +18,7 @@ import { logRevisit, type Mark } from "./marklist";
 import { WordCard, type WordAsk } from "./WordCard";
 import { Review } from "../components/Review";
 import { learning, sentenceIn, words as wordsApi, type Word } from "../lib/words";
-import { editBookmark, highlightChanged, removeBookmark, removeHighlight, removeMarks, wordRemoved as recordWordRemoved } from "../lib/undoable";
+import { editBookmark, highlightChanged, markAdded, removeBookmark, removeHighlight, removeMarks, wordRemoved as recordWordRemoved } from "../lib/undoable";
 import { PageView, roughBox, type Box, type Hit, type Pen } from "./PageView";
 import { openPageSource, pagePlace, parsePlace, wordsPlace, type Outline, type PageSource, type PageText } from "./pagesrc";
 import "./reader.css";
@@ -630,6 +630,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       try {
         const b = await marksApi.add(book.id, pagePlace(p), p / s.count, labelOf(p), chapterTitle(p), firstWords(t?.str));
         setMarks([...marksRef.current.filter((x) => x.id !== b.id), b].sort((a, c) => (a.fraction ?? 0) - (c.fraction ?? 0)));
+        markAdded({ kind: "bm", b });
       } catch (e) {
         console.error(e);
       }
@@ -825,6 +826,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       clearSelection();
       hlRef.current = [...hlRef.current.filter((x) => x.id !== h.id), h];
       setHl(hlRef.current);
+      markAdded({ kind: "hl", h });
       const lk = { color, style };
       setLook(lk);
       api.setSetting("reader.hlLook", JSON.stringify(lk)).catch(() => {});
