@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Spinner } from "../components/Spinner";
+import { SyncPill } from "../components/SyncPill";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, BOOK_EXTENSIONS, m7, READABLE, type Book } from "../lib/api";
 import { fmtTime, plural, progressLabel } from "../lib/format";
@@ -166,7 +167,7 @@ export function LocalPage() {
             </span>
           </span>
           <div className="pills">
-            {folders.length > 0 && <StatusPill />}
+            <SyncPill otherwise={folders.length > 0 && <StatusPill />} />
             <button type="button" className="pill fill" onClick={addFolder}><i className="ms">create_new_folder</i>Add a folder</button>
             <button type="button" className="pill" onClick={addBooks}><i className="ms">add</i>Add books</button>
           </div>

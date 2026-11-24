@@ -8,6 +8,7 @@
 pub mod api;
 pub mod books;
 pub mod net;
+pub mod pace;
 pub mod pair;
 pub mod place;
 pub mod session;

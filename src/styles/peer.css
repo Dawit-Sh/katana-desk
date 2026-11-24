@@ -1,0 +1,10 @@
+/* Sync on this Wi-Fi: the pill on Local while a paired device syncs, and the pairing card in Settings. */
+.syncpill { cursor: default; }
+.syncdot { width: 9px; height: 9px; border-radius: 50%; background: #7fd49a; display: inline-block; flex: none; }
+
+.pairbox { display: grid; gap: 10px; padding: 16px 18px; }
+.pairbox .pcode { font-size: 30px; font-weight: 700; letter-spacing: 0.2em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.pairbox .pchip { display: inline-flex; gap: 8px; align-items: center; width: fit-content; max-width: 100%; padding: 6px 12px; border-radius: 10px; background: var(--k-sch); font-variant-numeric: tabular-nums; font-size: 13.5px; }
+.pairbox .pchip b { font-weight: 600; }
+.pairbox .phint { color: var(--k-var); font-size: 13px; }
+.pairbox .prow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }

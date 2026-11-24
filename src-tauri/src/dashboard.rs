@@ -55,6 +55,22 @@ pub fn add_pace(conn: &Connection, book_id: i64, seconds: i64) -> rusqlite::Resu
     Ok(())
 }
 
+/// Reading done on a paired device (Sync on this Wi-Fi): a session of `seconds` that moved the place from
+/// `from` to `to` (shares of the book) adds to the book's pace here by the same rule as a tick here (going
+/// back, or a move over `max_move`, counts nothing). This PC's own last tick (`last_fraction`) stays as it
+/// was. True when it counted.
+pub fn add_device_pace(conn: &Connection, book_id: i64, seconds: i64, from: f64, to: f64) -> rusqlite::Result<bool> {
+    if seconds <= 0 || !from.is_finite() || !to.is_finite() || to < from || to - from > max_move(seconds) {
+        return Ok(false);
+    }
+    conn.execute(
+        "INSERT INTO book_pace (book_id, seconds, moved, last_fraction) VALUES (?1, ?2, ?3, NULL)
+         ON CONFLICT(book_id) DO UPDATE SET seconds = seconds + excluded.seconds, moved = moved + excluded.moved",
+        params![book_id, seconds, to - from],
+    )?;
+    Ok(true)
+}
+
 /// Seconds left at this book's pace here, when there's enough reading to tell.
 pub fn seconds_left(fraction: f64, seconds: i64, moved: f64) -> Option<i64> {
     if seconds < PACE_MIN_SECONDS || moved < PACE_MIN_MOVED || fraction >= 1.0 {
@@ -192,6 +208,31 @@ mod tests {
     }
     fn pace(c: &Connection, id: i64) -> (i64, f64) {
         c.query_row("SELECT seconds, moved FROM book_pace WHERE book_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    }
+
+    #[test]
+    fn reading_on_a_paired_device_adds_to_the_pace_here() {
+        let c = db();
+        c.execute("INSERT INTO books (id, fraction) VALUES (1, 0.10)", []).unwrap();
+        // this PC's own tick remembers where it is
+        add_pace(&c, 1, 30).unwrap();
+        // 20 minutes on the device, 5% further
+        assert!(add_device_pace(&c, 1, 1200, 0.10, 0.15).unwrap());
+        let (s, m) = pace(&c, 1);
+        assert_eq!(s, 1200);
+        assert!((m - 0.05).abs() < 1e-9);
+        // going back, a jump, or no time: nothing
+        assert!(!add_device_pace(&c, 1, 600, 0.30, 0.20).unwrap());
+        assert!(!add_device_pace(&c, 1, 10, 0.20, 0.60).unwrap());
+        assert!(!add_device_pace(&c, 1, 0, 0.20, 0.21).unwrap());
+        assert_eq!(pace(&c, 1).0, 1200);
+        // this PC's last tick is untouched, so its next tick still counts from there
+        let last: Option<f64> = c.query_row("SELECT last_fraction FROM book_pace WHERE book_id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(last, Some(0.10));
+        // a book read only on the device starts its pace from that
+        c.execute("INSERT INTO books (id, fraction) VALUES (2, 0.0)", []).unwrap();
+        assert!(add_device_pace(&c, 2, 900, 0.0, 0.04).unwrap());
+        assert_eq!(pace(&c, 2).0, 900);
     }
 
     #[test]

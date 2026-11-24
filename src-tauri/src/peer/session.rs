@@ -21,6 +21,8 @@ pub struct Changes {
     pub bookmarks: u32,
     /// Books this PC sent the phone (their files)
     pub books_sent: u32,
+    /// Reading sessions the phone told of (for the pace of time left)
+    pub reading: u32,
 }
 
 /// What a request did, for the counts.
@@ -32,6 +34,7 @@ pub enum Kind {
     Highlight,
     Bookmark,
     BookSent,
+    Reading,
 }
 
 impl Kind {
@@ -44,6 +47,7 @@ impl Kind {
             (_, ["api", "v1", "books", "status"]) | (_, ["api", "v1", "books", "reset-progress"]) => Kind::Status,
             (_, ["api", "v1", "annotations", ..]) => Kind::Highlight,
             (_, ["api", "v1", "bookmarks", ..]) => Kind::Bookmark,
+            ("POST", ["api", "v1", "reading-sessions"]) => Kind::Reading,
             _ => Kind::Look,
         }
     }
@@ -118,6 +122,7 @@ impl Syncs {
             Kind::Highlight => s.got.highlights += 1,
             Kind::Bookmark => s.got.bookmarks += 1,
             Kind::BookSent => s.got.books_sent += 1,
+            Kind::Reading => s.got.reading += 1,
         }
         started
     }
@@ -179,6 +184,7 @@ mod tests {
         assert_eq!(Kind::of("GET", &["api", "v1", "books", "3", "content"]), Kind::BookSent);
         assert_eq!(Kind::of("GET", &["api", "v1", "annotations", "book", "3"]), Kind::Look);
         assert_eq!(Kind::of("POST", &["katana-sync", "v1", "match"]), Kind::Look);
+        assert_eq!(Kind::of("POST", &["api", "v1", "reading-sessions"]), Kind::Reading);
     }
 
     #[test]

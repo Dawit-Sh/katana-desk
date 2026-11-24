@@ -120,6 +120,7 @@ fn route_paired(app: &AppHandle, method: &str, segs: &[&str], v: &Value, ask: &A
         ("GET", ["katana-sync", "v1", "reading"]) => ok(super::books::reading_json(&conn_of(app), sync::open_book_id())),
         ("GET", ["api", "v1", "books", id, "content"]) => num(id).map_or_else(|| fail(404, "No such book"), |id| content(app, id, ask)),
         ("POST", ["api", "v1", "books", "progress"]) => progress(app, v, device),
+        ("POST", ["api", "v1", "reading-sessions"]) => reading_session(app, v, device),
         ("POST", ["api", "v1", "books", "status"]) => set_status(app, v),
         ("POST", ["api", "v1", "books", "reset-progress"]) => reset(app, v),
         ("GET", ["api", "v1", "books", id]) => num(id).map_or_else(|| fail(404, "No such book"), |id| get_book(app, id)),
@@ -149,6 +150,23 @@ fn content(app: &AppHandle, id: i64, ask: &Ask) -> Reply {
     match super::books::file_answer(&path, &format.to_ascii_lowercase(), ask.range, ask.if_range) {
         Ok(f) => Reply { status: f.status, body: Some(Body::File(f)) },
         Err(status) => fail(status, "That book's file can't be read"),
+    }
+}
+
+/// A reading session on the device (Grimmory's shape), for the pace this PC's dashboard counts time left by.
+fn reading_session(app: &AppHandle, v: &Value, device: &pair::Device) -> Reply {
+    let Some(s) = super::pace::session_in(v) else { return fail(400, "bookId, startTime and endTime are needed") };
+    if book_row(app, s.book_id).is_none() {
+        return fail(404, "No such book");
+    }
+    match super::pace::take(&conn_of(app), &s, &device.device_id) {
+        Ok(counted) => {
+            if counted {
+                let _ = app.emit("library-changed", ());
+            }
+            done()
+        }
+        Err(e) => fail(500, &e.to_string()),
     }
 }
 

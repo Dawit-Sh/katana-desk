@@ -1,14 +1,16 @@
-// Settings › Sync and backup › Sync on this Wi-Fi: Katana on a phone or tablet syncs its Local books
-// (places, statuses, highlights, bookmarks) with this PC on the same Wi-Fi, no Grimmory server needed.
-// Off until he turns it on; "Pair a device" shows a 6-digit code for 5 minutes; paired devices with Forget.
+// Settings › Sync on this Wi-Fi: Katana on his other devices syncs its Local books (places, statuses,
+// highlights, bookmarks) with this PC on the same Wi-Fi, no Grimmory server needed. Off until he turns it on;
+// "Pair a device" shows a 6-digit code for 5 minutes beside this PC's address, the same one Katana shows when
+// it finds this PC (his OK on the round's page, item 4); paired devices with their last sync, and Forget.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
-import { fmtAgo } from "../lib/format";
+import { fmtWhen } from "../lib/format";
+import "../styles/peer.css";
 
 type Device = { deviceId: string; name: string; pairedAt: number; seenAt: number | null };
 /** What a phone changed here during one sync. */
-export type PeerChanges = { places: number; statuses: number; highlights: number; bookmarks: number; booksSent: number };
+export type PeerChanges = { places: number; statuses: number; highlights: number; bookmarks: number; booksSent: number; reading?: number };
 /** A phone syncing now (`peer-sync` "start", and `syncing` in the status). */
 export type PeerSyncing = { deviceId: string; name: string; since: number; at: number; got: PeerChanges };
 /** A phone's sync that ended (`peer-sync` "end"): `phone` is the phone's own side, `quiet` when it just went quiet. */
@@ -48,9 +50,9 @@ export function WifiSync() {
   if (!st) return null;
   const left = st.codeUntil ? Math.max(0, Math.round((st.codeUntil - now) / 1000)) : 0;
   const code = st.code && left > 0 ? st.code : null;
+  const lastOf = (d: Device) => (st.lastSync && st.lastSync.deviceId === d.deviceId ? st.lastSync.at : d.seenAt);
   return (
     <>
-      <div className="glab">Sync on this Wi-Fi</div>
       <div className="grp">
         <div className="srow">
           <i className="ms" style={{ color: "var(--k-var)" }}>{st.running ? "wifi" : "wifi_off"}</i>
@@ -60,8 +62,8 @@ export function WifiSync() {
               {st.error
                 ? st.error
                 : st.running
-                  ? `On: ${st.name}${st.address ? ` at ${st.address}:${st.port}` : ""}. Katana on a phone or tablet keeps the same books' places, statuses, highlights and bookmarks in step with this PC, with Grimmory's rules.`
-                  : "Off. Katana on a phone or tablet can sync its Local books with this PC when both are on the same Wi-Fi, without a Grimmory server."}
+                  ? `On: ${st.name}${st.address ? ` at ${st.address}` : ""}. Katana on your other devices keeps the same books' places, statuses, highlights and bookmarks in step with this PC, with Grimmory's rules.`
+                  : "Off. Katana on your other devices can sync its Local books with this PC when both are on the same Wi-Fi, without a Grimmory server."}
             </small>
           </div>
           <button
@@ -73,33 +75,41 @@ export function WifiSync() {
             onClick={async () => setSt(await invoke<PeerStatus>("peer_set_enabled", { on: !st.enabled }))}
           />
         </div>
-        {st.running && (
-          <div className="srow">
-            <i className="ms" style={{ color: "var(--k-var)" }}>add_link</i>
-            <div className="tx">
-              {code ? (
+        {st.running && code && (
+          <div className="pairbox" aria-live="polite">
+            <span>Type this code in Katana: Settings › Sources › Katana Desk.</span>
+            <span className="pcode" aria-label={`Code ${code.split("").join(" ")}`}>
+              {code.slice(0, 3)} {code.slice(3)}
+            </span>
+            <span className="pchip">
+              This PC · {st.name}
+              {st.address && (
                 <>
-                  <b style={{ fontSize: 28, letterSpacing: "0.18em", fontVariantNumeric: "tabular-nums" }}>{code}</b>
-                  <small style={{ whiteSpace: "normal" }}>
-                    In Katana: Settings › Sources › Katana Desk, then this code. Good for {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}.
-                  </small>
-                </>
-              ) : (
-                <>
-                  <b>Pair a device</b>
-                  <small style={{ whiteSpace: "normal" }}>Shows a code to type in Katana. Each code pairs one device and lasts 5 minutes.</small>
+                  {" · "}
+                  <b>{st.address}</b>
                 </>
               )}
-            </div>
-            {code ? (
+            </span>
+            <div className="prow">
+              <span className="phint">
+                Good for {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}. Each code pairs one device.
+              </span>
               <button type="button" className="pill" onClick={async () => setSt(await invoke<PeerStatus>("peer_pair_close"))}>
                 Done
               </button>
-            ) : (
-              <button type="button" className="pill fill" onClick={async () => setSt(await invoke<PeerStatus>("peer_pair_open"))}>
-                Pair a device
-              </button>
-            )}
+            </div>
+          </div>
+        )}
+        {st.running && !code && (
+          <div className="srow">
+            <i className="ms" style={{ color: "var(--k-var)" }}>add_link</i>
+            <div className="tx">
+              <b>Pair a device</b>
+              <small style={{ whiteSpace: "normal" }}>Shows a code to type in Katana. Each code pairs one device and lasts 5 minutes.</small>
+            </div>
+            <button type="button" className="pill fill" onClick={async () => setSt(await invoke<PeerStatus>("peer_pair_open"))}>
+              Pair a device
+            </button>
           </div>
         )}
         {st.devices.map((d) => (
@@ -110,8 +120,8 @@ export function WifiSync() {
               <small>
                 {st.syncing.some((s) => s.deviceId === d.deviceId)
                   ? "Syncing now…"
-                  : d.seenAt
-                    ? `Last synced ${fmtAgo(d.seenAt)}`
+                  : lastOf(d)
+                    ? `Last synced ${fmtWhen(lastOf(d) as number).replace(/^Today, /, "today at ").replace(/^Yesterday, /, "yesterday at ")}`
                     : "Paired, not synced yet"}
               </small>
             </div>

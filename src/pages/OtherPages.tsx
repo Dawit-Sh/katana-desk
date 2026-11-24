@@ -20,13 +20,14 @@ import { checkForUpdate, installUpdate, RELEASES, restartNow, useUpdates } from 
 import { AaPanel } from "../reader/AaPanel";
 import { BUILT_IN, loadUiFonts, normalise, saveDefaultPrefs, type Prefs } from "../reader/prefs";
 
-type Section = "general" | "appearance" | "reading" | "sources" | "dictionaries" | "sync" | "keyboard" | "about";
+type Section = "general" | "appearance" | "reading" | "sources" | "dictionaries" | "wifi" | "sync" | "keyboard" | "about";
 export const SECTIONS: { id: Section; icon: string; name: string; about: string }[] = [
   { id: "general", icon: "tune", name: "General", about: "How Katana Desk starts, and how big everything is." },
   { id: "appearance", icon: "palette", name: "Appearance", about: "Themes, cover sizes and the glass behind the sidebar." },
   { id: "reading", icon: "menu_book", name: "Reading defaults", about: "Your daily goal, and how a book looks when it has no settings of its own." },
   { id: "sources", icon: "cloud", name: "Sources", about: "Your Grimmory server and the folders on this PC." },
   { id: "dictionaries", icon: "dictionary", name: "Dictionaries", about: "The built-in offline dictionaries and your own StarDict files." },
+  { id: "wifi", icon: "wifi", name: "Sync on this Wi-Fi", about: "Katana on your other devices keeps the same books in step with this PC, no server needed." },
   { id: "sync", icon: "sync", name: "Sync and backup", about: "What goes to Grimmory, and copies of your library and marks." },
   { id: "keyboard", icon: "keyboard", name: "Keyboard", about: "Every key and click, in the library and in a book." },
   { id: "about", icon: "info", name: "About", about: "The version, updates, and everything Katana Desk is built on." },
@@ -605,12 +606,8 @@ export function SettingsPage() {
             <DictSettings />
           </>
         )}
-        {sec === "sync" && (
-          <>
-            <WifiSync />
-            <SyncBackup />
-          </>
-        )}
+        {sec === "wifi" && <WifiSync />}
+        {sec === "sync" && <SyncBackup />}
         {sec === "keyboard" && (
           <>
             <div className="glab">Keyboard and mouse</div>
