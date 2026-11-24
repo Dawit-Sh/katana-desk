@@ -7,6 +7,7 @@
 
 pub mod api;
 pub mod books;
+pub mod files;
 pub mod net;
 pub mod pace;
 pub mod pair;

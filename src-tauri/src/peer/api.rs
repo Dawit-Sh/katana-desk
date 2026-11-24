@@ -65,6 +65,14 @@ pub fn handle(app: &AppHandle, mut req: tiny_http::Request) {
         Some(std::net::IpAddr::V4(ip)) if !ip.is_loopback() => Some(ip),
         _ => None,
     };
+    if super::files::is_upload(&method, &path) {
+        // a book file from a paired device: its body is the file, not JSON
+        let (status, v) = super::files::receive(app, &mut req, &url, auth.as_deref());
+        let json_type = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json; charset=utf-8"[..]).unwrap();
+        let reply = tiny_http::Response::from_data(v.to_string().into_bytes()).with_header(json_type);
+        let _ = req.respond(reply.with_status_code(tiny_http::StatusCode(status)));
+        return;
+    }
     let mut body = String::new();
     let _ = req.as_reader().take(BODY_LIMIT).read_to_string(&mut body);
     let ask = Ask { auth: auth.as_deref(), body: &body, range: range.as_deref(), if_range: if_range.as_deref(), from };
@@ -118,6 +126,7 @@ fn route_paired(app: &AppHandle, method: &str, segs: &[&str], v: &Value, ask: &A
     match (method, segs) {
         ("POST", ["katana-sync", "v1", "match"]) => match_books(app, v),
         ("GET", ["katana-sync", "v1", "reading"]) => ok(super::books::reading_json(&conn_of(app), sync::open_book_id())),
+        ("GET", ["katana-sync", "v1", "reading-list"]) => ok(super::books::reading_list_json(&conn_of(app), sync::open_book_id())),
         ("GET", ["api", "v1", "books", id, "content"]) => num(id).map_or_else(|| fail(404, "No such book"), |id| content(app, id, ask)),
         ("POST", ["api", "v1", "books", "progress"]) => progress(app, v, device),
         ("POST", ["api", "v1", "reading-sessions"]) => reading_session(app, v, device),

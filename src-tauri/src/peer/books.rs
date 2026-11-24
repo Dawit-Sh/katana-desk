@@ -36,6 +36,38 @@ pub fn reading_id(conn: &Connection, open: Option<i64>) -> Option<i64> {
     .flatten()
 }
 
+/// Every book being read here, newest first: the one open in the reader, then each opened in the last 60 days that's
+/// started and not finished (his ask: only the books you're reading move between devices).
+pub fn reading_ids(conn: &Connection, open: Option<i64>) -> Vec<i64> {
+    let mut ids: Vec<i64> = reading_id(conn, open).filter(|id| Some(*id) == open).into_iter().collect();
+    let since = crate::db::now() - 60 * 24 * 3600 * 1000;
+    if let Ok(mut st) = conn.prepare(
+        "SELECT id FROM books WHERE missing = 0 AND path <> '' AND opened_at > ?3 AND fraction > ?1 AND fraction < ?2
+         ORDER BY opened_at DESC, id DESC LIMIT 30",
+    ) {
+        if let Ok(rows) = st.query_map(rusqlite::params![STARTED, FINISHED, since], |r| r.get::<_, i64>(0)) {
+            ids.extend(rows.flatten().filter(|id| Some(*id) != open));
+        }
+    }
+    ids
+}
+
+/// The answer to `/katana-sync/v1/reading-list`: `{"books": [...]}`, each as `/reading` gives its book.
+pub fn reading_list_json(conn: &Connection, open: Option<i64>) -> Value {
+    let books: Vec<Value> = reading_ids(conn, open)
+        .into_iter()
+        .map(|id| {
+            let mut v = reading_json(conn, Some(id));
+            if let Some(b) = v.get_mut("book").filter(|b| b.is_object()) {
+                b["open"] = json!(open == Some(id));
+            }
+            v["book"].take()
+        })
+        .filter(|b| b.is_object())
+        .collect();
+    json!({ "books": books })
+}
+
 /// The answer to `/katana-sync/v1/reading`: `{"book": {...}}`, or `{"book": null}` when nothing's being read.
 pub fn reading_json(conn: &Connection, open: Option<i64>) -> Value {
     let Some(id) = reading_id(conn, open) else { return json!({ "book": null }) };
@@ -224,6 +256,22 @@ mod tests {
         assert_eq!(reading_id(&c, None), Some(5));
         // an open book whose file is gone doesn't count
         assert_eq!(reading_id(&c, Some(4)), Some(5));
+    }
+
+    #[test]
+    fn every_book_read_lately_is_listed_the_open_one_first() {
+        let c = db();
+        let now = crate::db::now();
+        add(&c, 1, Some(now - 1000), Some(0.2), false);
+        add(&c, 2, Some(now - 500), Some(1.0), false); // finished
+        add(&c, 3, Some(now - 90 * 24 * 3600 * 1000), Some(0.4), false); // not read lately
+        add(&c, 4, Some(now - 2000), Some(0.5), false);
+        assert_eq!(reading_ids(&c, Some(4)), vec![4, 1]);
+        assert_eq!(reading_ids(&c, None), vec![1, 4]);
+        let list = reading_list_json(&c, Some(4));
+        assert_eq!(list["books"].as_array().map(Vec::len), Some(2));
+        assert_eq!(list["books"][0]["open"], true);
+        assert_eq!(list["books"][1]["open"], false);
     }
 
     #[test]
