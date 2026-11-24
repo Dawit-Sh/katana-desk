@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { StatusPill } from "./StatusPill";
-import { StatusUndo } from "./UndoBar";
 import { api, grimmory, gFormat, gReadable, m7, READABLE, type GBook } from "../lib/api";
 import { fmtAgo, fmtDate, fmtMb, fmtWhen } from "../lib/format";
 import { useStore } from "../lib/store";
@@ -122,9 +121,7 @@ export function GBookSheet({ book }: { book: GBook }) {
               </span>
             </>
           )}
-          <StatusUndo gid={book.id} localId={p.local?.id ?? null} title={book.title}>
-            <StatusPill gid={book.id} status={book.readStatus} localId={p.local?.id ?? null} started={started} />
-          </StatusUndo>
+          <StatusPill gid={book.id} status={book.readStatus} localId={p.local?.id ?? null} started={started} title={book.title} />
         </div>
       </div>
       <div className="acts2">

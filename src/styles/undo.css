@@ -17,4 +17,3 @@
 /* in a book the page's own short messages ("Copied") go above the bar */
 body:has(.ubar.inbook) .toast { bottom: 124px }
 /* around the status pill: no box of its own */
-.stundo { display: contents }

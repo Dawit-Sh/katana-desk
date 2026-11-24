@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { grimmory } from "../lib/api";
 import { useStore } from "../lib/store";
+import { statusChanged, statusMarks } from "../lib/undoable";
 
 export const STATUSES: { id: string; name: string; icon: string }[] = [
   { id: "UNREAD", name: "Unread", icon: "radio_button_unchecked" },
@@ -19,7 +20,8 @@ export const STATUSES: { id: string; name: string; icon: string }[] = [
 
 export const statusName = (s: string | null | undefined) => STATUSES.find((x) => x.id === s);
 
-export function StatusPill({ gid, status, localId }: { gid: number | null; status: string | null; localId: number | null; started?: boolean }) {
+/** A book's reading status and its menu. With `title`, a status picked here goes on the undo history (Ctrl Z). */
+export function StatusPill({ gid, status, localId, title }: { gid: number | null; status: string | null; localId: number | null; started?: boolean; title?: string }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -30,6 +32,18 @@ export function StatusPill({ gid, status, localId }: { gid: number | null; statu
   // a book only on this PC: its status is kept here
   useEffect(() => {
     if (gid == null && localId != null) invoke<string | null>("book_status", { id: localId }).then(setNow).catch(() => {});
+  }, [gid, localId]);
+  // an undo or redo of this book's status: read it again
+  useEffect(() => {
+    const on = (e: Event) => {
+      const d = (e as CustomEvent<{ gid: number | null; localId: number | null }>).detail;
+      const mine = (d.localId != null && d.localId === localId) || (d.gid != null && d.gid === gid);
+      if (!mine) return;
+      if (gid == null && localId != null) invoke<string | null>("book_status", { id: localId }).then(setNow).catch(() => {});
+      else if (gid != null) setNow(useStore.getState().catalog.books.find((b) => b.id === gid)?.readStatus ?? null);
+    };
+    window.addEventListener("katana-status", on);
+    return () => window.removeEventListener("katana-status", on);
   }, [gid, localId]);
   useEffect(() => {
     if (!open) return;
@@ -58,6 +72,7 @@ export function StatusPill({ gid, status, localId }: { gid: number | null; statu
   const done = async (p: Promise<unknown>) => {
     setBusy(true);
     setErr(null);
+    let ok = false;
     try {
       const s = await p;
       if (typeof s === "string") setNow(s);
@@ -66,10 +81,37 @@ export function StatusPill({ gid, status, localId }: { gid: number | null; statu
       const st = useStore.getState();
       st.reload();
       st.reloadCatalog().catch(() => {});
+      ok = true;
     } catch (e) {
       setErr(String(e));
     }
     setBusy(false);
+    return ok;
+  };
+  // a status picked in the menu; with `title`, Undo can put back the status and what it changed here
+  // (Unread clears the place, Read sets the finished day, Re-reading starts a new read)
+  const pick = async (to: string) => {
+    const from = now;
+    const copies = title == null ? [] : useStore.getState().books.filter((b) => b.id === localId || (gid != null && b.grimmoryId === gid));
+    const marks = await Promise.all(copies.map((b) => statusMarks(b.id).catch(() => null)));
+    let call: Promise<unknown>;
+    if (gid == null) call = invoke<string>("book_set_status", { id: localId, status: to });
+    else {
+      // re-reading: the marks from here on go to a new read (Bookmarks › Compare reads)
+      if (to === "RE_READING" && localId != null) invoke("book_new_read", { bookId: localId }).catch(() => {});
+      call = grimmory.setStatus(gid, to);
+    }
+    const ok = await done(call);
+    if (!ok || title == null || to === from) return;
+    statusChanged({
+      gid,
+      localId,
+      title,
+      from,
+      to,
+      name: (s) => statusName(s)?.name ?? s,
+      places: copies.map((b, i) => ({ id: b.id, location: b.location, fraction: b.fraction, chapter: b.chapter, marks: marks[i] })),
+    });
   };
   const cur = statusName(now);
   const reset = () => done(gid != null ? grimmory.resetProgress(gid) : grimmory.resetPlace(localId!));
@@ -97,12 +139,7 @@ export function StatusPill({ gid, status, localId }: { gid: number | null; statu
                 aria-checked={now === s.id}
                 key={s.id}
                 disabled={busy}
-                onClick={() => {
-                  if (gid == null) return done(invoke<string>("book_set_status", { id: localId, status: s.id }));
-                  // re-reading: the marks from here on go to a new read (Bookmarks › Compare reads)
-                  if (s.id === "RE_READING" && localId != null) invoke("book_new_read", { bookId: localId }).catch(() => {});
-                  done(grimmory.setStatus(gid, s.id));
-                }}
+                onClick={() => void pick(s.id)}
               >
                 <i className="ms">{s.icon}</i>
                 <span>{s.name}</span>

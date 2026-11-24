@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { StatusPill } from "./StatusPill";
-import { StatusUndo } from "./UndoBar";
 import { api, bookKey, grimmory, m7, READABLE, type Book } from "../lib/api";
 import { fmtAgo, fmtDate, fmtSize, fmtWhen } from "../lib/format";
 import { useStore } from "../lib/store";
@@ -74,9 +73,7 @@ export function BookSheet({ book }: { book: Book }) {
             </>
           )}
           {readable && (
-            <StatusUndo gid={signedIn ? gid : null} localId={book.id} title={book.title}>
-              <StatusPill gid={signedIn ? gid : null} status={gStatus} localId={book.id} started={started} />
-            </StatusUndo>
+            <StatusPill gid={signedIn ? gid : null} status={gStatus} localId={book.id} started={started} title={book.title} />
           )}
         </div>
       </div>
