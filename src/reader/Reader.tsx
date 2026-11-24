@@ -17,6 +17,8 @@ import { logRevisit, type Mark } from "./marklist";
 import { WordCard, type WordAsk } from "./WordCard";
 import { Review } from "../components/Review";
 import { learning, sentenceAround, words as wordsApi, type Word } from "../lib/words";
+import { undoKey } from "../lib/undo";
+import { editBookmark, highlightChanged, removeBookmark, removeHighlight, removeMarks, wordRemoved as recordWordRemoved } from "../lib/undoable";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { cleanNote, isNoteLink, noteElement } from "./footnotes";
 import { BUILT_IN, MARGINS, bookCss, loadPrefs, loadUiFonts, pageColours, saveBookPrefs, saveDefaultPrefs, type Prefs } from "./prefs";
@@ -283,9 +285,14 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     else poke();
   }, [floating, offer, note, state, poke, lost, word, review]);
 
-  // this book's saved words, for the Words tab
+  // this book's saved words, for the Words tab (again when one is taken out or put back anywhere)
   useEffect(() => {
-    wordsApi.list(book.id).then(setBookWords).catch(() => {});
+    const load = () => wordsApi.list(book.id).then(setBookWords).catch(() => {});
+    load();
+    const un = listen("words-changed", load);
+    return () => {
+      un.then((f) => f());
+    };
   }, [book.id]);
 
   // ---------- where you are ----------
@@ -361,7 +368,8 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     if (!r?.cfi || !CFI) return;
     const on = hereOf(r, marksRef.current);
     if (on.size) {
-      await Promise.all([...on].map((id) => marksApi.remove(id).catch(() => {})));
+      const gone = marksRef.current.filter((b) => on.has(b.id)).map((b) => ({ kind: "bm" as const, b }));
+      await removeMarks(gone, book.title).catch(() => {});
       const list = marksRef.current.filter((b) => !on.has(b.id));
       setMarks(list);
       setHere(new Set());
@@ -387,14 +395,14 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   }, [book.id]);
 
   const removeMark = async (b: Bookmark) => {
-    await marksApi.remove(b.id).catch(() => {});
+    await removeBookmark(b).catch(() => {});
     const list = marksRef.current.filter((x) => x.id !== b.id);
     setMarks(list);
     setHere(hereOf(last.current, list));
   };
 
   const saveBookmark = async (b: Bookmark, title: string | null, note: string | null) => {
-    await marksApi.update(b.id, title, note).catch(() => {});
+    await editBookmark(b, title, note).catch(() => {});
     setMarks(marksRef.current.map((x) => (x.id === b.id ? { ...x, title, note, updatedAt: Date.now() } : x)));
   };
 
@@ -466,7 +474,12 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       setLook(lk);
       api.setSetting("reader.hlLook", JSON.stringify(lk)).catch(() => {});
     }
-    await hls.update(h.id, color, style, note).catch(() => showToast({ text: "That change couldn't be saved." }));
+    const saved = await hls.update(h.id, color, style, note).then(
+      () => true,
+      () => (showToast({ text: "That change couldn't be saved." }), false),
+    );
+    // Ctrl Z puts the look or the note back
+    if (saved) highlightChanged(h, color, style, note);
   };
 
   const deleteHighlight = async (h: Highlight) => {
@@ -474,17 +487,8 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     setHl((list) => list.filter((x) => x.id !== h.id));
     hlRef.current = hlRef.current.filter((x) => x.id !== h.id);
     undraw(h.cfi);
-    await hls.remove(h.id).catch(() => {});
-    showToast({
-      text: "Highlight deleted",
-      undo: async () => {
-        const back = await hls.restore(h).catch(() => null);
-        if (!back) return;
-        setHl((list) => [...list.filter((x) => x.id !== back.id), back]);
-        hlRef.current = [...hlRef.current.filter((x) => x.id !== back.id), back];
-        draw(back);
-      },
-    });
+    // the undo bar offers it back (Ctrl Z)
+    await removeHighlight(h).catch(() => {});
   };
 
   const copySel = async () => {
@@ -533,13 +537,8 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
   };
   const wordRemoved = (w: Word) => {
     setBookWords((list) => list.filter((x) => x.id !== w.id));
-    showToast({
-      text: `“${w.word}” taken out of My words`,
-      undo: async () => {
-        const back = await wordsApi.restore(w).catch(() => null);
-        if (back) setBookWords((list) => [back, ...list.filter((x) => x.id !== back.id)].sort((a, b) => b.createdAt - a.createdAt));
-      },
-    });
+    // the undo bar offers it back (Ctrl Z)
+    recordWordRemoved(w);
   };
   const removeWord = async (w: Word) => {
     const gone = await wordsApi.remove(w.id).catch(() => null);
@@ -785,6 +784,8 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     const onKey = (e: KeyboardEvent) => {
       // the review cards take the keys while they're open
       if (ui.current.review) return;
+      // Ctrl Z and Ctrl Y from the page itself (its frames don't pass keys on to the app's own handler)
+      if (undoKey(e)) return;
       const t = e.target as HTMLElement | null;
       const typing = !!t?.closest?.("input, textarea, [contenteditable]");
       const k = e.key.toLowerCase();

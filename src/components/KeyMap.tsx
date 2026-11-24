@@ -15,6 +15,8 @@ export const SECTIONS: Section[] = [
       { what: "Commands", keys: ["Ctrl K", ">"] },
       { what: "Open a file", keys: ["Ctrl O"] },
       { what: "Settings", keys: ["Ctrl ,"] },
+      { what: "Undo the last change", keys: ["Ctrl Z"] },
+      { what: "Put it back again", keys: ["Ctrl Y", "Ctrl Shift Z"] },
       { what: "This keyboard map", keys: ["?", "Ctrl /"] },
       { what: "App size (outside a book)", keys: ["Ctrl +", "Ctrl −", "Ctrl 0"] },
       { what: "Full screen", keys: ["F11"] },

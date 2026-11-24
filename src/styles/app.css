@@ -403,7 +403,3 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .bmhead .bmdel { color: var(--k-var) }
 .bmhead .bmdel:hover:not(:disabled) { color: #e5737a }
 .bmhead .bmdel:disabled { opacity: .35 }
-.undobar { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 80; width: max-content; display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 20px; border-radius: 26px; background: var(--k-sch); box-shadow: 0 10px 30px var(--k-shadow); font-size: 14px; overflow: hidden; max-width: calc(100% - 48px) }
-.undobar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.undobar .undotime { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--k-pri); transform-origin: left; animation: undotime 6s linear forwards }
-@keyframes undotime { from { transform: scaleX(1) } to { transform: scaleX(0) } }

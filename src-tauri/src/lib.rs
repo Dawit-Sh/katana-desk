@@ -224,18 +224,31 @@ fn add_bookmark(
     Ok(b)
 }
 
+/// Removes a bookmark. Answers the read it belonged to, for Undo.
 #[tauri::command]
-fn remove_bookmark(app: AppHandle, lib: State<Library>, id: i64) -> Res<()> {
-    let book = {
+fn remove_bookmark(app: AppHandle, lib: State<Library>, id: i64) -> Res<Option<i64>> {
+    let (book, read) = {
         let conn = lib.db.0.lock().unwrap();
         let book = marks::book_of(&conn, "bookmarks", id);
+        let read = highlights::read_of(&conn, "bookmarks", id);
         marks::remove(&conn, id).map_err(err)?;
-        book
+        (book, read)
     };
     if let Some(b) = book {
         grimmory::marks_sync::schedule(&app, b);
     }
-    Ok(())
+    Ok(read)
+}
+
+/// Undo: a bookmark removed comes back (in its read), and goes to Grimmory again if it had gone.
+#[tauri::command]
+fn restore_bookmark(app: AppHandle, lib: State<Library>, b: marks::Bookmark, read_n: Option<i64>) -> Res<marks::Bookmark> {
+    let back = {
+        let conn = lib.db.0.lock().unwrap();
+        marks::restore(&conn, &b, read_n).map_err(err)?
+    };
+    grimmory::marks_sync::schedule(&app, back.book_id);
+    Ok(back)
 }
 
 #[tauri::command]
@@ -311,26 +324,28 @@ fn update_highlight(app: AppHandle, lib: State<Library>, id: i64, color: String,
     Ok(h)
 }
 
+/// Removes a highlight. Answers the read it belonged to, for Undo.
 #[tauri::command]
-fn remove_highlight(app: AppHandle, lib: State<Library>, id: i64) -> Res<()> {
-    let book = {
+fn remove_highlight(app: AppHandle, lib: State<Library>, id: i64) -> Res<Option<i64>> {
+    let (book, read) = {
         let conn = lib.db.0.lock().unwrap();
         let book = marks::book_of(&conn, "highlights", id);
+        let read = highlights::read_of(&conn, "highlights", id);
         highlights::remove(&conn, id).map_err(err)?;
-        book
+        (book, read)
     };
     if let Some(b) = book {
         grimmory::marks_sync::schedule(&app, b);
     }
-    Ok(())
+    Ok(read)
 }
 
-/// Undo: a highlight just removed comes back.
+/// Undo: a highlight removed comes back (in its read), and goes to Grimmory again if it had gone.
 #[tauri::command]
-fn restore_highlight(app: AppHandle, lib: State<Library>, h: highlights::Highlight) -> Res<highlights::Highlight> {
+fn restore_highlight(app: AppHandle, lib: State<Library>, h: highlights::Highlight, read_n: Option<i64>) -> Res<highlights::Highlight> {
     let back = {
         let conn = lib.db.0.lock().unwrap();
-        highlights::restore(&conn, &h).map_err(err)?
+        highlights::restore(&conn, &h, read_n).map_err(err)?
     };
     grimmory::marks_sync::schedule(&app, back.book_id);
     Ok(back)
@@ -784,6 +799,7 @@ pub fn run() {
             update_highlight,
             remove_highlight,
             restore_highlight,
+            restore_bookmark,
             place_marks,
             marked_books,
             search_marks,
@@ -875,6 +891,8 @@ pub fn run() {
             reads::mark_move_read,
             reads::book_status,
             reads::book_set_status,
+            reads::book_status_marks,
+            reads::book_status_put_back,
             lists::list_rename,
             lists::list_delete,
             lists::list_restore,

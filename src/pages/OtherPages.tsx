@@ -10,6 +10,7 @@ import { api, grimmory, m7 } from "../lib/api";
 import { fmtTime, fmtWhen, plural } from "../lib/format";
 import { useStore, type CoverSize, type ThemePref } from "../lib/store";
 import { addFolder } from "./LocalPage";
+import { removeFolder } from "../lib/undoable";
 import { DictCredits, DictSettings } from "./DictSettings";
 import { WifiSync } from "./WifiSync";
 import { dict } from "../lib/words";
@@ -114,7 +115,7 @@ function LocalSettings() {
             <button type="button" className="ib" title="Show in File Explorer" onClick={() => api.reveal(f.path)}>
               <i className="ms">folder_open</i>
             </button>
-            <button type="button" className="ib" title="Stop showing this folder in Katana Desk (the files stay where they are)" onClick={() => api.removeFolder(f.id)}>
+            <button type="button" className="ib" title="Stop showing this folder in Katana Desk (the files stay where they are; Ctrl Z brings it back)" onClick={() => removeFolder(f).catch(() => {})}>
               <i className="ms">remove_circle_outline</i>
             </button>
           </div>

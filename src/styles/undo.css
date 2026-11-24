@@ -1,0 +1,20 @@
+/* The undo bar (src/components/UndoBar.tsx): at the bottom, in the middle, until the next change. Over pages,
+   sheets and menus; under dialogs (the palette, the keyboard map, review cards, Change cover). */
+.ubar { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 55; display: flex; align-items: center; gap: 6px; height: 44px; max-width: min(760px, calc(100% - 32px)); padding: 0 6px 0 18px; border-radius: 999px; background: var(--k-schh); color: var(--k-on); box-shadow: 0 10px 30px var(--k-shadow); font-size: 13.5px; animation: ubarin .14s ease-out; user-select: none }
+.ubar.inbook { bottom: 72px }
+.ubar .ut { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 6px }
+.ubar .ut b { font-weight: 600 }
+.ubar .ud { color: var(--k-var) }
+.ubar .pill { flex: none; height: 32px; padding: 0 8px 0 14px; gap: 8px; background: var(--k-sch); font-size: 13px }
+.ubar .pill:hover { background: color-mix(in srgb, var(--k-sch) 80%, var(--k-on)) }
+.ubar .pill kbd { border: 0; padding: 1px 6px; border-radius: 6px; background: var(--k-schh); color: var(--k-var); font: 500 11px var(--font-ui) }
+.ubar .ux { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; color: var(--k-var) }
+.ubar .ux:hover { background: var(--k-sch); color: var(--k-on) }
+.ubar .ux .ms { font-size: 18px }
+.ubar.failed .ut b { color: #e6837a }
+:root[data-tone="light"] .ubar.failed .ut b { color: #b3261e }
+@keyframes ubarin { from { opacity: 0; transform: translate(-50%, 8px) } to { opacity: 1; transform: translateX(-50%) } }
+/* in a book the page's own short messages ("Copied") go above the bar */
+body:has(.ubar.inbook) .toast { bottom: 124px }
+/* around the status pill: no box of its own */
+.stundo { display: contents }

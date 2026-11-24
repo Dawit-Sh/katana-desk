@@ -18,6 +18,7 @@ import { logRevisit, type Mark } from "./marklist";
 import { WordCard, type WordAsk } from "./WordCard";
 import { Review } from "../components/Review";
 import { learning, sentenceIn, words as wordsApi, type Word } from "../lib/words";
+import { editBookmark, highlightChanged, removeBookmark, removeHighlight, removeMarks, wordRemoved as recordWordRemoved } from "../lib/undoable";
 import { PageView, roughBox, type Box, type Hit, type Pen } from "./PageView";
 import { openPageSource, pagePlace, parsePlace, wordsPlace, type Outline, type PageSource, type PageText } from "./pagesrc";
 import "./reader.css";
@@ -620,7 +621,7 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       if (!s) return;
       const on = marksRef.current.filter((b) => parsePlace(b.cfi)?.page === p);
       if (on.length) {
-        await Promise.all(on.map((b) => marksApi.remove(b.id).catch(() => {})));
+        await removeMarks(on.map((b) => ({ kind: "bm" as const, b })), book.title).catch(() => {});
         const ids = new Set(on.map((b) => b.id));
         setMarks(marksRef.current.filter((b) => !ids.has(b.id)));
         return;
@@ -637,11 +638,11 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
     [book.id, labelOf, chapterOf],
   );
   const removeMark = async (b: Bookmark) => {
-    await marksApi.remove(b.id).catch(() => {});
+    await removeBookmark(b).catch(() => {});
     setMarks(marksRef.current.filter((x) => x.id !== b.id));
   };
   const saveBookmark = async (b: Bookmark, title: string | null, note: string | null) => {
-    await marksApi.update(b.id, title, note).catch(() => {});
+    await editBookmark(b, title, note).catch(() => {});
     setMarks(marksRef.current.map((x) => (x.id === b.id ? { ...x, title, note, updatedAt: Date.now() } : x)));
   };
 
@@ -842,22 +843,19 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
       setLook(lk);
       api.setSetting("reader.hlLook", JSON.stringify(lk)).catch(() => {});
     }
-    await hls.update(h.id, color, style, note).catch(() => showToast({ text: "That change couldn't be saved." }));
+    const saved = await hls.update(h.id, color, style, note).then(
+      () => true,
+      () => (showToast({ text: "That change couldn't be saved." }), false),
+    );
+    // Ctrl Z puts the look or the note back
+    if (saved) highlightChanged(h, color, style, note);
   };
   const deleteHighlight = async (h: Highlight) => {
     setCard(null);
     hlRef.current = hlRef.current.filter((x) => x.id !== h.id);
     setHl(hlRef.current);
-    await hls.remove(h.id).catch(() => {});
-    showToast({
-      text: "Highlight deleted",
-      undo: async () => {
-        const b = await hls.restore(h).catch(() => null);
-        if (!b) return;
-        hlRef.current = [...hlRef.current.filter((x) => x.id !== b.id), b];
-        setHl(hlRef.current);
-      },
-    });
+    // the undo bar offers it back (Ctrl Z)
+    await removeHighlight(h).catch(() => {});
   };
   const copySel = async () => {
     const s = selRef.current;
@@ -896,16 +894,17 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
   };
   const wordRemoved = (w: Word) => {
     setBookWords((list) => list.filter((x) => x.id !== w.id));
-    showToast({
-      text: `“${w.word}” taken out of My words`,
-      undo: async () => {
-        const b = await wordsApi.restore(w).catch(() => null);
-        if (b) setBookWords((list) => [b, ...list.filter((x) => x.id !== b.id)].sort((a, c) => c.createdAt - a.createdAt));
-      },
-    });
+    // the undo bar offers it back (Ctrl Z)
+    recordWordRemoved(w);
   };
+  // this book's saved words (again when one is taken out or put back anywhere)
   useEffect(() => {
-    wordsApi.list(book.id).then(setBookWords).catch(() => {});
+    const load = () => wordsApi.list(book.id).then(setBookWords).catch(() => {});
+    load();
+    const un = listen("words-changed", load);
+    return () => {
+      un.then((f) => f());
+    };
   }, [book.id]);
 
   /** Goes to a mark's page, and to its words. */

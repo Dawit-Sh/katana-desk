@@ -6,6 +6,7 @@ import { plural } from "../lib/format";
 import { useStore, type BookMenuAt } from "../lib/store";
 import { Cover, GCover } from "../components/Cover";
 import { coverForBook, coverForG } from "../components/CoverDialog";
+import { addToList, removeList, takeOffList } from "../lib/undoable";
 
 type Entry = { key: string; local?: Book; g?: GBook };
 
@@ -57,8 +58,6 @@ export function ListsPage() {
   const setSel = useStore((s) => s.setListSel);
   const [naming, setNaming] = useState<number | "new" | null>(null);
   const [name, setName] = useState("");
-  const [undo, setUndo] = useState<List | null>(null);
-  const undoTimer = useRef(0);
   useEffect(() => {
     loadLists().catch(() => {});
   }, [loadLists]);
@@ -79,20 +78,11 @@ export function ListsPage() {
     await loadLists();
     setNaming(null);
   };
+  // gone at once; the undo bar (Ctrl Z) brings it back with its books
   const remove = async (l: List) => {
-    await listApi.remove(l.id);
+    await removeList(l);
     await loadLists();
     setSel(null);
-    setUndo(l);
-    clearTimeout(undoTimer.current);
-    undoTimer.current = window.setTimeout(() => setUndo(null), 8000);
-  };
-  const putBack = async () => {
-    if (!undo) return;
-    const id = await listApi.restore(undo);
-    setUndo(null);
-    await loadLists();
-    setSel(id);
   };
 
   const nameField = (onDone: () => void) => (
@@ -150,12 +140,6 @@ export function ListsPage() {
           ))}
         </div>
         <p className="lshint">Add books to a list from a book's page (Add to a list) or by right-clicking a cover.</p>
-        {undo && (
-          <div className="ls-undo">
-            <span>“{undo.name}” removed</span>
-            <button type="button" className="pill" onClick={putBack}>Undo</button>
-          </div>
-        )}
       </div>
     );
 
@@ -180,12 +164,6 @@ export function ListsPage() {
             </button>
           ))}
         </div>
-        {undo && (
-          <div className="ls-undo">
-            <span>“{undo.name}” removed</span>
-            <button type="button" className="pill" onClick={putBack}>Undo</button>
-          </div>
-        )}
       </div>
       <div className="bmright">
         {cur && (
@@ -219,7 +197,7 @@ export function ListsPage() {
                       {e.local ? <Cover book={e.local} /> : <GCover book={e.g!} />}
                       <div className="bt">
                         <span>{title}</span>
-                        <button type="button" aria-label="Take it off this list" title="Take it off this list" onClick={() => listApi.take(cur.id, e.key).then(() => useStore.getState().loadLists())}>
+                        <button type="button" aria-label="Take it off this list" title="Take it off this list" onClick={() => takeOffList(cur, e.key).then(() => useStore.getState().loadLists())}>
                           <i className="ms">remove_circle_outline</i>
                         </button>
                       </div>
@@ -247,8 +225,9 @@ export function ListMenu({ bookKey, onDone }: { bookKey: string; onDone?: () => 
     loadLists().catch(() => {});
   }, [loadLists]);
   const toggle = async (l: List) => {
-    if (l.books.includes(bookKey)) await listApi.take(l.id, bookKey);
-    else await listApi.add(l.id, bookKey);
+    // Ctrl Z undoes either
+    if (l.books.includes(bookKey)) await takeOffList(l, bookKey);
+    else await addToList(l, bookKey);
     await loadLists();
   };
   const create = async () => {

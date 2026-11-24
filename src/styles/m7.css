@@ -226,8 +226,6 @@
 .ls-name { display: block }
 .ls-name input { width: 100% }
 .ls-grid { padding-bottom: 24px }
-.ls-undo { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 999px; background: var(--k-sch); font-size: 13px; margin-top: auto; margin-bottom: 16px }
-.ls-undo span { flex: 1 }
 .ls .bmright { overflow-y: auto }
 
 /* ---------- Settings ---------- */
