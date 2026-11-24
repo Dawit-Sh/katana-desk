@@ -191,30 +191,66 @@ pub fn remove(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Brings back a highlight just removed (Undo): as a change to send when Grimmory already took the removal.
-pub fn restore(conn: &Connection, h: &Highlight) -> rusqlite::Result<Highlight> {
-    let tomb: Option<i64> = conn
-        .query_row("SELECT id FROM highlights WHERE uuid = ?1 AND deleted_at IS NOT NULL", [&h.uuid], |r| r.get(0))
+/// Brings back a highlight removed (Undo), in the read it belonged to (`read_n`, as the removal answered).
+/// A tombstone (Grimmory has it and the removal hasn't gone up) comes back as a change to send, so it stays
+/// on the server; one gone for good comes back as it was (its uuid, its day) and goes up as new.
+pub fn restore(conn: &Connection, h: &Highlight, read_n: Option<i64>) -> rusqlite::Result<Highlight> {
+    let mine: Option<(i64, bool)> = conn
+        .query_row("SELECT id, deleted_at IS NOT NULL FROM highlights WHERE uuid = ?1", [&h.uuid], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?;
-    if let Some(id) = tomb {
-        conn.execute(
-            "UPDATE highlights SET deleted_at = NULL, updated_at = ?2, sync_state = 'dirty' WHERE id = ?1",
-            params![id, now()],
-        )?;
+    match mine {
+        Some((id, true)) => {
+            conn.execute(
+                "UPDATE highlights SET deleted_at = NULL, updated_at = ?2, sync_state = 'dirty' WHERE id = ?1",
+                params![id, now()],
+            )?;
+            return Ok(get(conn, id)?.unwrap());
+        }
+        // back already
+        Some((id, false)) => return Ok(get(conn, id)?.unwrap()),
+        None => {}
+    }
+    let read = read_n.filter(|n| *n > 0);
+    // the same words marked again in that read meanwhile: that one takes this look and note
+    if let Some(id) = conn
+        .query_row(
+            "SELECT id FROM highlights WHERE book_id = ?1 AND cfi = ?2 AND deleted_at IS NULL
+                AND read_n = COALESCE(?3, (SELECT MAX(n) FROM book_reads WHERE book_id = ?1), 1)",
+            params![h.book_id, h.cfi, read],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()?
+    {
+        update(conn, id, &h.color, &h.style, h.note.as_deref())?;
         return Ok(get(conn, id)?.unwrap());
     }
-    let n = NewHighlight {
-        book_id: h.book_id,
-        cfi: &h.cfi,
-        text: &h.text,
-        chapter: h.chapter.as_deref(),
-        fraction: h.fraction,
-        page_label: h.page_label.as_deref(),
-        color: &h.color,
-        style: &h.style,
-        note: h.note.as_deref(),
-    };
-    add(conn, &n)
+    conn.execute(
+        "INSERT INTO highlights (uuid, book_id, cfi, text, chapter, fraction, page_label, color, style, note, created_at, updated_at, sync_state, read_n)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 'local', COALESCE(?13, 0))",
+        params![
+            h.uuid,
+            h.book_id,
+            h.cfi,
+            h.text.trim(),
+            h.chapter,
+            h.fraction,
+            h.page_label,
+            color_ok(&h.color),
+            style_ok(&h.style),
+            clean_note(h.note.as_deref()),
+            h.created_at,
+            now(),
+            read
+        ],
+    )?;
+    Ok(get(conn, conn.last_insert_rowid())?.unwrap())
+}
+
+/// The read a mark belongs to (`table`: highlights or bookmarks), asked before it's removed so Undo puts
+/// it back there.
+pub fn read_of(conn: &Connection, table: &str, id: i64) -> Option<i64> {
+    let table = if table == "highlights" { "highlights" } else { "bookmarks" };
+    conn.query_row(&format!("SELECT read_n FROM {table} WHERE id = ?1"), [id], |r| r.get(0)).optional().ok().flatten()
 }
 
 /// Where a highlight sits in the book, worked out by the reader (for ones that came from Grimmory).
@@ -464,9 +500,33 @@ mod tests {
         let st: String = c.query_row("SELECT sync_state FROM highlights WHERE id = ?1", [a.id], |r| r.get(0)).unwrap();
         assert_eq!(st, "deleted");
         // undo brings it back as a change
-        let back = restore(&c, &x).unwrap();
+        let back = restore(&c, &x, Some(1)).unwrap();
         assert_eq!(back.id, a.id);
         assert_eq!(back.sync_state, "dirty");
+        // twice is still one
+        assert_eq!(restore(&c, &x, Some(1)).unwrap().id, a.id);
+        assert_eq!(list(&c, 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn undo_of_one_gone_for_good_keeps_its_uuid_day_and_read() {
+        let c = db();
+        let a = add(&c, &hl("epubcfi(/6/4!/4/2,/1:0,/1:5)")).unwrap();
+        c.execute("UPDATE highlights SET created_at = 1000 WHERE id = ?1", [a.id]).unwrap();
+        let a = get(&c, a.id).unwrap().unwrap();
+        let b = add(&c, &hl("epubcfi(/6/4!/4/8,/1:0,/1:5)")).unwrap();
+        // a second read starts; both were made in the first
+        crate::reads::start(&c, 1).unwrap();
+        assert_eq!(read_of(&c, "highlights", a.id), Some(1));
+        remove(&c, a.id).unwrap();
+        assert!(get(&c, a.id).unwrap().is_none());
+        let back = restore(&c, &a, Some(1)).unwrap();
+        assert_eq!((back.uuid.as_str(), back.created_at, back.sync_state.as_str()), (a.uuid.as_str(), 1000, "local"));
+        assert_eq!(read_of(&c, "highlights", back.id), Some(1));
+        // without its read it goes to the current one
+        remove(&c, b.id).unwrap();
+        let b2 = restore(&c, &b, None).unwrap();
+        assert_eq!(read_of(&c, "highlights", b2.id), Some(2));
     }
 
     #[test]

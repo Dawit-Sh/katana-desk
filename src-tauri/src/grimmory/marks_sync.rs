@@ -1578,6 +1578,29 @@ mod tests {
         assert!(plan_bookmarks(&[], &[pdf], &clock()).acts.is_empty());
     }
 
+    /// Ctrl Z on a removal (highlights.rs and marks.rs `restore`): whenever it comes, the mark ends up on
+    /// the server again, once.
+    #[test]
+    fn a_removal_undone_stays_on_the_server() {
+        let s = rh(5, C1, "w");
+        // undone before the removal went up: the tombstone is a change again, and nothing is sent
+        let mut l = lh(1, C1, "w", Some(&s), "dirty");
+        l.updated_at = NOW;
+        assert_eq!(plan_highlights(&[l.clone()], &[s.clone()], &clock()).acts, vec![Act::InStep { id: 1, server: s.clone() }]);
+        // undone while the removal was on its way (the server lost it, the row stayed linked): up again as new
+        assert_eq!(plan_highlights(&[l], &[], &clock()).acts, vec![Act::Unlink(1), Act::Create(1)]);
+        // undone after the removal went up (the tombstone was gone): a new one, sent up
+        let n = lh(7, C1, "w", None, "local");
+        assert_eq!(plan_highlights(&[n], &[], &clock()).acts, vec![Act::Create(7)]);
+        // bookmarks the same way
+        let sb = rb(3, B1, None);
+        let mut b = lb(1, B1, Some((&sb, None)), "dirty");
+        b.updated_at = NOW;
+        assert_eq!(plan_bookmarks(&[b.clone()], &[sb.clone()], &clock()).acts, vec![Act::InStep { id: 1, server: sb }]);
+        assert_eq!(plan_bookmarks(&[b], &[], &clock()).acts, vec![Act::Unlink(1), Act::Create(1)]);
+        assert_eq!(plan_bookmarks(&[lb(7, B1, None, "local")], &[], &clock()).acts, vec![Act::Create(7)]);
+    }
+
     #[test]
     fn page_bookmarks_key_by_page() {
         let pdf = RemoteBm { id: 1, page_number: Some(12), ..Default::default() };

@@ -7,7 +7,7 @@
 use crate::db::now;
 use crate::library::Library;
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::State;
 
@@ -153,9 +153,15 @@ pub fn book_status(lib: State<Library>, id: i64) -> Option<String> {
     conn.query_row("SELECT read_status FROM books WHERE id = ?1", [id], |r| r.get(0)).ok().flatten()
 }
 
-/// Sets a Local book's status: Unread clears its place too, Re-reading starts a new read.
+/// Sets a Local book's status: Unread clears its place too, Re-reading starts a new read. An empty status
+/// takes it off again (Undo of the first status a book was given); nothing else changes.
 #[tauri::command]
 pub fn book_set_status(app: tauri::AppHandle, lib: State<Library>, id: i64, status: String) -> Result<String, String> {
+    if status.is_empty() {
+        let conn = lib.db.0.lock().unwrap();
+        conn.execute("UPDATE books SET read_status = NULL WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
+        return Ok(status);
+    }
     if !crate::grimmory::sync::STATUSES.contains(&status.as_str()) {
         return Err(format!("{status} isn't a reading status"));
     }
@@ -167,6 +173,42 @@ pub fn book_set_status(app: tauri::AppHandle, lib: State<Library>, id: i64, stat
         crate::grimmory::sync::clear(&app, id);
     }
     Ok(status)
+}
+
+/// What a status change can change here besides the status: the day the book was finished (Read sets it,
+/// Unread clears it) and its current read (Re-reading starts one). Taken before a change; Undo puts it back.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusMarks {
+    pub finished_at: Option<i64>,
+    pub read: i64,
+}
+
+pub fn status_marks(conn: &Connection, id: i64) -> rusqlite::Result<StatusMarks> {
+    let finished_at = conn.query_row("SELECT finished_at FROM books WHERE id = ?1", [id], |r| r.get(0))?;
+    Ok(StatusMarks { finished_at, read: current(conn, id) })
+}
+
+/// Puts back what `status_marks` took: the finished day, and no reads started since that are still empty.
+pub fn put_status_marks(conn: &Connection, id: i64, m: &StatusMarks) -> rusqlite::Result<()> {
+    conn.execute("UPDATE books SET finished_at = ?2 WHERE id = ?1", params![id, m.finished_at])?;
+    conn.execute(
+        "DELETE FROM book_reads WHERE book_id = ?1 AND n > ?2
+            AND NOT EXISTS (SELECT 1 FROM highlights h WHERE h.book_id = ?1 AND h.read_n = book_reads.n AND h.deleted_at IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM bookmarks m WHERE m.book_id = ?1 AND m.read_n = book_reads.n AND m.deleted_at IS NULL)",
+        params![id, m.read],
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn book_status_marks(lib: State<Library>, id: i64) -> Result<StatusMarks, String> {
+    status_marks(&lib.db.0.lock().unwrap(), id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn book_status_put_back(lib: State<Library>, id: i64, m: StatusMarks) -> Result<(), String> {
+    put_status_marks(&lib.db.0.lock().unwrap(), id, &m).map_err(|e| e.to_string())
 }
 
 /// Moves one mark to another read (made in the wrong one).
@@ -215,5 +257,25 @@ mod tests {
         assert_eq!(r.current, 2);
         assert_eq!((r.reads[1].highlights, r.reads[1].bookmarks), (1, 1));
         assert_eq!(start(&c, 1).unwrap(), 3);
+    }
+
+    #[test]
+    fn undo_of_a_status_puts_back_the_finished_day_and_drops_an_empty_new_read() {
+        let c = db();
+        c.execute_batch("ALTER TABLE books ADD COLUMN finished_at INTEGER; ALTER TABLE books ADD COLUMN read_status TEXT;").unwrap();
+        c.execute("UPDATE books SET finished_at = 1000 WHERE id = 1", []).unwrap();
+        let before = status_marks(&c, 1).unwrap();
+        assert_eq!(before, StatusMarks { finished_at: Some(1000), read: 1 });
+        // Re-reading: a new read, and Read again later sets a new day
+        set_local_status(&c, 1, "RE_READING").unwrap();
+        set_local_status(&c, 1, "READ").unwrap();
+        assert_eq!(current(&c, 1), 2);
+        put_status_marks(&c, 1, &before).unwrap();
+        assert_eq!(status_marks(&c, 1).unwrap(), before);
+        // a read that has marks by now stays
+        set_local_status(&c, 1, "RE_READING").unwrap();
+        c.execute("INSERT INTO highlights (book_id) VALUES (1)", []).unwrap();
+        put_status_marks(&c, 1, &before).unwrap();
+        assert_eq!(current(&c, 1), 2);
     }
 }

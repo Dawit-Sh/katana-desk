@@ -7,7 +7,7 @@
 
 use crate::db::now;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Tables added in schema 3. Additive only.
 pub const SCHEMA_V3: &str = "
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS book_prefs (
 
 /// sync_state values: `local` (made here, not on Grimmory yet), `synced`, `dirty` (changed here since),
 /// `deleted` (removed here, the removal still has to go up).
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Bookmark {
     pub id: i64,
@@ -156,6 +156,56 @@ pub fn remove(conn: &Connection, id: i64) -> rusqlite::Result<()> {
         None => {}
     }
     Ok(())
+}
+
+/// Brings back a bookmark removed (Undo), in the read it belonged to (`read_n`). As with highlights: a
+/// tombstone comes back as a change to send, so Grimmory keeps it; one gone for good comes back as it was
+/// (its uuid, name, note and day) and goes up as new. A bookmark made at the same place meanwhile is the one.
+pub fn restore(conn: &Connection, b: &Bookmark, read_n: Option<i64>) -> rusqlite::Result<Bookmark> {
+    let by_id = |id: i64| conn.query_row(&format!("SELECT {COLS} FROM bookmarks WHERE id = ?1"), [id], row);
+    let mine: Option<(i64, bool)> = conn
+        .query_row("SELECT id, deleted_at IS NOT NULL FROM bookmarks WHERE uuid = ?1", [&b.uuid], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()?;
+    match mine {
+        Some((id, true)) => {
+            conn.execute(
+                "UPDATE bookmarks SET deleted_at = NULL, updated_at = ?2, sync_state = 'dirty' WHERE id = ?1",
+                params![id, now()],
+            )?;
+            return by_id(id);
+        }
+        Some((id, false)) => return by_id(id),
+        None => {}
+    }
+    if let Some(id) = conn
+        .query_row(
+            "SELECT id FROM bookmarks WHERE book_id = ?1 AND cfi = ?2 AND deleted_at IS NULL",
+            params![b.book_id, b.cfi],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()?
+    {
+        return by_id(id);
+    }
+    conn.execute(
+        "INSERT INTO bookmarks (uuid, book_id, cfi, fraction, page_label, chapter, excerpt, title, note, created_at, updated_at, sync_state, read_n)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'local', COALESCE(?12, 0))",
+        params![
+            b.uuid,
+            b.book_id,
+            b.cfi,
+            b.fraction,
+            b.page_label,
+            b.chapter,
+            b.excerpt,
+            clean(b.title.as_deref()),
+            clean(b.note.as_deref()),
+            b.created_at,
+            now(),
+            read_n.filter(|n| *n > 0)
+        ],
+    )?;
+    by_id(conn.last_insert_rowid())
 }
 
 /// Names a bookmark and gives it a note (the marks panel in milestone 4).
@@ -274,6 +324,35 @@ mod tests {
         // a bookmark at the same place can be made again after a removal
         let again = add(&c, &mark("epubcfi(/6/8!/4/2)", 0.5)).unwrap();
         assert_ne!(again.id, b.id);
+    }
+
+    #[test]
+    fn undo_brings_a_bookmark_back() {
+        let c = db();
+        c.execute_batch(crate::highlights::SCHEMA_V4).unwrap();
+        c.execute_batch(crate::reads::SCHEMA_V9).unwrap();
+        let a = add(&c, &mark("epubcfi(/6/4!/4/2)", 0.1)).unwrap();
+        update(&c, a.id, Some("Name"), Some("A note")).unwrap();
+        let b = add(&c, &mark("epubcfi(/6/8!/4/2)", 0.5)).unwrap();
+        c.execute("UPDATE bookmarks SET remote_id = 9, sync_state = 'synced' WHERE id = ?1", [b.id]).unwrap();
+        let a = list(&c, 1).unwrap().into_iter().find(|x| x.id == a.id).unwrap();
+        let b = list(&c, 1).unwrap().into_iter().find(|x| x.id == b.id).unwrap();
+        crate::reads::start(&c, 1).unwrap();
+        // never on Grimmory: gone for good, back with its uuid, name, note, day and read
+        let read = crate::highlights::read_of(&c, "bookmarks", a.id);
+        remove(&c, a.id).unwrap();
+        let back = restore(&c, &a, read).unwrap();
+        assert_eq!((back.uuid.as_str(), back.title.as_deref(), back.note.as_deref()), (a.uuid.as_str(), Some("Name"), Some("A note")));
+        assert_eq!((back.created_at, back.sync_state.as_str()), (a.created_at, "local"));
+        assert_eq!(crate::highlights::read_of(&c, "bookmarks", back.id), Some(1));
+        // on Grimmory: the tombstone comes back as a change, still linked
+        remove(&c, b.id).unwrap();
+        let back = restore(&c, &b, Some(1)).unwrap();
+        assert_eq!((back.id, back.remote_id, back.sync_state.as_str()), (b.id, Some(9), "dirty"));
+        assert_eq!(list(&c, 1).unwrap().len(), 2);
+        // twice is still one
+        restore(&c, &b, Some(1)).unwrap();
+        assert_eq!(list(&c, 1).unwrap().len(), 2);
     }
 
     #[test]
