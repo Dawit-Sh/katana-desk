@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCardPlace, type Anchor } from "./cards";
 import { DownloadLine, Entries, Sentence, useDictStatus } from "../components/DictView";
 import { dict, learning, onlineUrl, words, type Found, type Lookup, type Word } from "../lib/words";
+import { wordAdded } from "../lib/undoable";
 
 /** What the card was asked: the words, where they are, the sentence around them. */
 export type WordAsk = {
@@ -108,6 +109,7 @@ export function WordCard({
         });
         setSaved(w);
         onSaved(w);
+        wordAdded(w);
       }
     } finally {
       setBusy(false);

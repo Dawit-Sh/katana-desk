@@ -18,7 +18,7 @@ import { WordCard, type WordAsk } from "./WordCard";
 import { Review } from "../components/Review";
 import { learning, sentenceAround, words as wordsApi, type Word } from "../lib/words";
 import { undoKey } from "../lib/undo";
-import { editBookmark, highlightChanged, removeBookmark, removeHighlight, removeMarks, wordRemoved as recordWordRemoved } from "../lib/undoable";
+import { editBookmark, highlightChanged, markAdded, removeBookmark, removeHighlight, removeMarks, wordRemoved as recordWordRemoved } from "../lib/undoable";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { cleanNote, isNoteLink, noteElement } from "./footnotes";
 import { BUILT_IN, MARGINS, bookCss, loadPrefs, loadUiFonts, pageColours, saveBookPrefs, saveDefaultPrefs, type Prefs } from "./prefs";
@@ -388,6 +388,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       const list = [...marksRef.current.filter((x) => x.id !== b.id), b].sort((a, c) => (a.fraction ?? 0) - (c.fraction ?? 0));
       setMarks(list);
       setHere(hereOf(r, list));
+      markAdded({ kind: "bm", b });
     } catch (e) {
       console.error(e);
     }
@@ -454,6 +455,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       setHl((list) => [...list.filter((x) => x.id !== h.id), h]);
       hlRef.current = [...hlRef.current.filter((x) => x.id !== h.id), h];
       draw(h);
+      markAdded({ kind: "hl", h });
       const lk = { color, style };
       setLook(lk);
       api.setSetting("reader.hlLook", JSON.stringify(lk)).catch(() => {});

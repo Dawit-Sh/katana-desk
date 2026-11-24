@@ -1,6 +1,6 @@
 // Share as an image (Katana 1.2.5's quote card, on the desk): a highlight drawn as a card, the preview on the
 // left and its ground and shape on the right. Paper, Dusk, Teal, the book's cover colours, the book's cover
-// itself or your own picture (chosen, or dropped on the window), blurred or not; square or tall. Save image…
+// itself or your own picture (chosen, or dropped on the window), with an effect (Blur, Dither, Halftone, Grain, Mono, Duotone, Pixel); square or tall. Save image…
 // writes a PNG (Pictures\Katana by default), Copy image puts it on the clipboard to paste into a chat.
 // Opens from a highlight's card in the reader and from right-clicking a highlight on the Bookmarks page.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -15,6 +15,7 @@ import { copyText } from "../reader/cards";
 import { DUSK, PAPER, PICTURE, TEAL, coverCardColors, fileName, isPicture, parseColor, type CardColors, type CardShape, type Ground } from "../lib/quotecard";
 import { cardFontsReady, cardPng, decodePicture, drawCard, swatchesOfDrawn, swatchesOfImage } from "../lib/quotedraw";
 import "../styles/share.css";
+import { EFFECTS, type Effect } from "../lib/cardeffects";
 
 /** The book a quote is from: what the card says and where its cover is. */
 export type ShareBook = { id: number; title: string; author: string | null; cover: string | null; grimmoryId: number | null; source?: string };
@@ -151,7 +152,7 @@ function ShareDialog({ q }: { q: ShareQuote }) {
   const close = () => useShare.setState({ quote: null });
   const [ground, setGround] = useState<Ground>("paper");
   const [shape, setShape] = useState<CardShape>("square");
-  const [blurred, setBlurred] = useState(true);
+  const [effect, setEffect] = useState<Effect>("blur");
   const [cover, setCover] = useState<Picture | null | undefined>(undefined);
   const [photo, setPhoto] = useState<Picture | null>(null);
   const [fonts, setFonts] = useState(false);
@@ -195,7 +196,7 @@ function ShareDialog({ q }: { q: ShareQuote }) {
   }, [cover, q.book.title, q.book.author]);
 
   const colorsOf = (g: Ground) => (g === "cover" ? coverColors ?? PAPER : isPicture(g) ? PICTURE : (GROUNDS.find((x) => x.id === g)?.colors ?? PAPER));
-  const backdrop = ground === "coverPicture" && cover ? { image: cover.image, blurred } : ground === "photo" && photo ? { image: photo.image, blurred } : null;
+  const backdrop = ground === "coverPicture" && cover ? { image: cover.image, effect } : ground === "photo" && photo ? { image: photo.image, effect } : null;
   // a picture ground that isn't there (yet) waits on Paper
   const shown: Ground = isPicture(ground) && !backdrop ? "paper" : ground;
 
@@ -203,7 +204,7 @@ function ShareDialog({ q }: { q: ShareQuote }) {
     if (!fonts || !canvas.current) return;
     drawCard(canvas.current, text, colorsOf(shown), shape, backdrop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fonts, text, shown, shape, blurred, cover, photo, coverColors]);
+  }, [fonts, text, shown, shape, effect, cover, photo, coverColors]);
 
   const takePicture = async (get: () => Promise<ArrayBuffer | Blob>) => {
     try {
@@ -346,11 +347,6 @@ function ShareDialog({ q }: { q: ShareQuote }) {
                   </button>
                 ))}
               </span>
-              {isPicture(ground) && (
-                <button type="button" className={`sh-chip ${blurred ? "on" : ""}`} aria-pressed={blurred} onClick={() => setBlurred(!blurred)}>
-                  {blurred && <i className="ms">check</i>}Blur
-                </button>
-              )}
               {ground === "photo" && photo && (
                 <button type="button" className="sh-chip" onClick={choose}>
                   <i className="ms">image</i>Change picture
@@ -358,6 +354,18 @@ function ShareDialog({ q }: { q: ShareQuote }) {
               )}
             </div>
           </div>
+          {isPicture(ground) && (
+            <div>
+              <div className="sh-lbl">Effect</div>
+              <div className="sh-chips" role="radiogroup" aria-label="Effect">
+                {EFFECTS.map((x) => (
+                  <button key={x.id} type="button" role="radio" aria-checked={effect === x.id} className={`sh-chip ${effect === x.id ? "on" : ""}`} onClick={() => setEffect(x.id)}>
+                    {x.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <p className="sh-hint">Or drop a picture here to use it as the background.</p>
           <div className="sh-foot">
             {msg && (
