@@ -21,6 +21,8 @@ import { Reader } from "./reader/Reader";
 import { PageReader } from "./reader/PageReader";
 import { PAGE_FORMATS } from "./reader/pagesrc";
 import { startPdfCovers } from "./lib/pdfcovers";
+import { undoKey } from "./lib/undo";
+import { UndoBar } from "./components/UndoBar";
 
 const win = getCurrentWindow();
 
@@ -157,6 +159,8 @@ export function App() {
       const st = useStore.getState();
       const t = e.target as HTMLElement | null;
       const typing = !!t?.closest?.("input, textarea, select, [contenteditable]");
+      // Ctrl Z undoes the last change, Ctrl Y or Ctrl Shift Z puts it back (a text box keeps its own)
+      if (undoKey(e)) return;
       if (e.key === "F11") {
         e.preventDefault();
         win.setFullscreen(!(await win.isFullscreen()));
@@ -234,6 +238,7 @@ export function App() {
       {s.keymap && <KeyMap />}
       {s.coverFor && <CoverDialog key={s.coverFor.key} t={s.coverFor} />}
       {s.menu && <BookMenu m={s.menu} />}
+      <UndoBar />
     </>
   );
 

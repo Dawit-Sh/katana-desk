@@ -12,6 +12,7 @@ import { Review } from "../components/Review";
 import { WordGraph } from "../components/WordGraph";
 import { SentenceQ, wordMatches } from "../reader/wordlist";
 import { dict, exportWords, isDue, learning, words, type Lookup, type Word } from "../lib/words";
+import { removeWord } from "../lib/undoable";
 
 type View = "list" | "graph";
 
@@ -118,7 +119,7 @@ export function WordsPage() {
   const [book, setBook] = useState<number | "all">("all");
   const [openId, setOpenId] = useState<number | null>(null);
   const [review, setReview] = useState<false | true | Word>(false);
-  const [msg, setMsg] = useState<{ text: string; undo?: () => void } | null>(null);
+  const [msg, setMsg] = useState<{ text: string } | null>(null);
   const [view, setView] = useState<View | null>(null);
   const [version, setVersion] = useState(0);
   const [seek, setSeek] = useState(0);
@@ -153,8 +154,11 @@ export function WordsPage() {
   }, [load, installed]);
   useEffect(() => {
     const un = listen("library-changed", () => load());
+    // a word taken out or put back (Ctrl Z), here or in a book
+    const un2 = listen("words-changed", () => load());
     return () => {
       un.then((f) => f());
+      un2.then((f) => f());
     };
   }, [load]);
 
@@ -167,19 +171,12 @@ export function WordsPage() {
   const shown = (list ?? []).filter((w) => (book === "all" || w.bookId === book) && wordMatches(w, needle));
   const due = (list ?? []).filter((w) => (book === "all" || w.bookId === book) && isDue(w)).length;
 
+  // taken out at once; the undo bar (Ctrl Z) puts it back
   const remove = async (w: Word) => {
-    const gone = await words.remove(w.id).catch(() => null);
+    const gone = await removeWord(w).catch(() => null);
     if (!gone) return;
     setOpenId(null);
     load();
-    setMsg({
-      text: `“${w.word}” taken out of My words`,
-      undo: async () => {
-        await words.restore(gone).catch(() => null);
-        setMsg(null);
-        load();
-      },
-    });
   };
 
   if (list && !list.length)
@@ -264,11 +261,6 @@ export function WordsPage() {
       {msg && (
         <div className="bmmsg wmsg">
           <span>{msg.text}</span>
-          {msg.undo && (
-            <button type="button" className="pill tone" onClick={msg.undo}>
-              Undo
-            </button>
-          )}
           <button type="button" className="pbtn" aria-label="Close" onClick={() => setMsg(null)}>
             <i className="ms">close</i>
           </button>

@@ -72,8 +72,11 @@ export const marks = {
   list: (bookId: number) => invoke<Bookmark[]>("bookmarks", { bookId }),
   add: (bookId: number, cfi: string, fraction: number | null, pageLabel: string | null, chapter: string | null, excerpt: string | null) =>
     invoke<Bookmark>("add_bookmark", { bookId, cfi, fraction, pageLabel, chapter, excerpt }),
-  remove: (id: number) => invoke<void>("remove_bookmark", { id }),
+  /** answers the read it belonged to, for Undo */
+  remove: (id: number) => invoke<number | null>("remove_bookmark", { id }),
   update: (id: number, title: string | null, note: string | null) => invoke<void>("update_bookmark", { id, title, note }),
+  /** Undo: back as it was, in its read */
+  restore: (b: Bookmark, readN: number | null = null) => invoke<Bookmark>("restore_bookmark", { b, readN }),
 };
 
 export const hls = {
@@ -81,8 +84,10 @@ export const hls = {
   add: (h: { bookId: number; cfi: string; text: string; chapter: string | null; fraction: number | null; pageLabel: string | null; color: Colour; style: Style; note?: string | null }) =>
     invoke<Highlight>("add_highlight", { ...h, note: h.note ?? null }),
   update: (id: number, color: Colour, style: Style, note: string | null) => invoke<Highlight | null>("update_highlight", { id, color, style, note }),
-  remove: (id: number) => invoke<void>("remove_highlight", { id }),
-  restore: (h: Highlight) => invoke<Highlight>("restore_highlight", { h }),
+  /** answers the read it belonged to, for Undo */
+  remove: (id: number) => invoke<number | null>("remove_highlight", { id }),
+  /** Undo: back as it was, in its read */
+  restore: (h: Highlight, readN: number | null = null) => invoke<Highlight>("restore_highlight", { h, readN }),
 };
 
 /** A PDF drawing: Grimmory's pen, a highlight or a text box made in its reader, or Katana's own pen.

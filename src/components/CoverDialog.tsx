@@ -9,6 +9,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { covers, type OlCover } from "../lib/api";
 import { useStore, type CoverTarget } from "../lib/store";
 import { pdfFirstPage } from "../lib/pdfcovers";
+import { resetCover, saveCover } from "../lib/undoable";
 
 const FW = 260; // the frame, 2:3
 const FH = 390;
@@ -229,7 +230,8 @@ export function CoverDialog({ t }: { t: CoverTarget }) {
       ctx.drawImage(img, p.left, p.top, p.w, p.h);
       const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.9));
       if (!blob) throw new Error("The cover couldn't be made.");
-      await covers.save(t.key, new Uint8Array(await blob.arrayBuffer()), picked.source);
+      // Ctrl Z puts the cover before back
+      await saveCover(t, new Uint8Array(await blob.arrayBuffer()), picked.source);
       await useStore.getState().loadCovers();
       close();
     } catch (e) {
@@ -241,7 +243,7 @@ export function CoverDialog({ t }: { t: CoverTarget }) {
   const reset = async () => {
     setBusy(true);
     try {
-      await covers.reset(t.key);
+      await resetCover(t);
       await useStore.getState().loadCovers();
       close();
     } catch (e) {

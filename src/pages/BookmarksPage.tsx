@@ -2,7 +2,6 @@
 // it, in reading order under their chapters. One search covers every mark of every book, one row of tabs
 // filters them all. A mark opens the book there; Export saves a book's marks as Markdown.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { api } from "../lib/api";
@@ -17,6 +16,7 @@ import { plural } from "../lib/format";
 import { useStore } from "../lib/store";
 import { MarkRows, Tabs, allMarks, inTab, logRevisit, matches, type Mark, type Tab } from "../reader/marklist";
 import { exportMarkdown, hls, marks as bms, marksApi, type Bookmark, type Highlight, type MarkedBook, type MarksSync } from "../reader/marks";
+import { editBookmark, removeMark, removeMarks } from "../lib/undoable";
 
 const counts = (b: MarkedBook) =>
   [b.bookmarks ? plural(b.bookmarks, "bookmark") : "", b.highlights ? plural(b.highlights, "highlight") : "", b.notes ? plural(b.notes, "note") : ""]
@@ -98,48 +98,13 @@ export function BookmarksPage() {
     return () => clearTimeout(t);
   }, [needle]);
 
-  // A book's marks (or one read's) removed: hidden at once, gone for good after 6 s unless Undo. Leaving
-  // the page or removing another book's marks first finishes the one waiting.
-  type Pending = { bookId: number; title: string; marks: Mark[]; read: number };
-  const [pending, setPending] = useState<Pending | null>(null);
-  const pendingRef = useRef<Pending | null>(null);
-  const pendTimer = useRef(0);
-  const commit = useCallback(
-    async (pd: Pending) => {
-      for (const m of pd.marks) {
-        if (m.kind === "hl") await hls.remove(m.h.id).catch(() => {});
-        else await bms.remove(m.b.id).catch(() => {});
-      }
-      loadOne(pd.bookId);
-      marksApi.books().then(setBooks).catch(() => {});
-    },
-    [loadOne],
-  );
-  const removeAll = (pd: Pending) => {
-    if (!pd.marks.length) return;
-    clearTimeout(pendTimer.current);
-    if (pendingRef.current) commit(pendingRef.current);
-    pendingRef.current = pd;
-    setPending(pd);
-    pendTimer.current = window.setTimeout(() => {
-      pendingRef.current = null;
-      setPending(null);
-      commit(pd);
-    }, 6000);
+  // A book's marks (or one read's) removed: gone at once, as one change the undo bar (Ctrl Z) puts back.
+  const removeAll = async (bookId: number, title: string, list: Mark[], read: number) => {
+    if (!list.length) return;
+    await removeMarks(list, read ? `${title} (read ${read})` : title).catch(() => {});
+    loadOne(bookId);
+    marksApi.books().then(setBooks).catch(() => {});
   };
-  const undo = () => {
-    clearTimeout(pendTimer.current);
-    pendingRef.current = null;
-    setPending(null);
-  };
-  useEffect(
-    () => () => {
-      clearTimeout(pendTimer.current);
-      if (pendingRef.current) commit(pendingRef.current);
-    },
-    [commit],
-  );
-  const markKey = (m: Mark) => (m.kind === "hl" ? `h${m.h.id}` : `b${m.b.id}`);
 
   const sections = useMemo(
     () =>
@@ -147,41 +112,37 @@ export function BookmarksPage() {
         .filter((b) => !hits || hits.has(b.id))
         .map((b) => {
           const d = data[b.id];
-          const gone = pending?.bookId === b.id ? new Set(pending.marks.map(markKey)) : null;
-          const every = d ? allMarks(d.hl, d.bm) : [];
-          const all = gone ? every.filter((m) => !gone.has(markKey(m))) : every;
+          const all = d ? allMarks(d.hl, d.bm) : [];
           const titleHit = !!needle && `${b.title} ${b.author ?? ""}`.toLowerCase().includes(needle);
           const rn = readOf[b.id] ?? 0;
           const inRead = (m: Mark) => !rn || !d?.reads || (m.kind === "hl" ? d.reads.hl[m.h.id] ?? 1 : d.reads.bm[m.b.id] ?? 1) === rn;
           const shown = all.filter((m) => inTab(m, tab) && inRead(m) && (titleHit || matches(m, needle)));
           return { b, d, shown, inBook: all.filter(inRead) };
         })
-        .filter((x) => !x.d || x.shown.length > 0 || ((readOf[x.b.id] ?? 0) > 0 && pending?.bookId !== x.b.id)),
-    [books, hits, data, tab, needle, readOf, pending], // eslint-disable-line react-hooks/exhaustive-deps
+        .filter((x) => !x.d || x.shown.length > 0 || (readOf[x.b.id] ?? 0) > 0),
+    [books, hits, data, tab, needle, readOf],
   );
   const totals = useMemo(() => {
     let hl = 0;
     let bm = 0;
     let notes = 0;
     let all = 0;
-    const gone = new Set(pending?.marks.map(markKey) ?? []);
     for (const d of Object.values(data)) {
-      const a = allMarks(d.hl, d.bm).filter((m) => !gone.has(markKey(m)));
+      const a = allMarks(d.hl, d.bm);
       hl += a.filter((m) => m.kind === "hl").length;
       bm += a.filter((m) => m.kind === "bm").length;
       all += a.length;
       notes += a.filter((m) => inTab(m, "notes")).length;
     }
     return { all, highlights: hl, notes, bookmarks: bm };
-  }, [data, pending]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data]);
 
   const onRemove = async (id: number, m: Mark) => {
-    if (m.kind === "hl") await hls.remove(m.h.id).catch(() => {});
-    else await bms.remove(m.b.id).catch(() => {});
+    await removeMark(m).catch(() => {});
     loadOne(id);
   };
   const onSaveBookmark = async (id: number, b: Bookmark, title: string | null, note: string | null) => {
-    await bms.update(b.id, title, note).catch(() => {});
+    await editBookmark(b, title, note).catch(() => {});
     loadOne(id);
   };
   const onExport = async (b: MarkedBook) => {
@@ -260,9 +221,9 @@ export function BookmarksPage() {
               type="button"
               className="ib bmdel"
               aria-label={(readOf[b.id] ?? 0) ? `Remove read ${readOf[b.id]}'s marks of ${b.title}` : `Remove every mark of ${b.title}`}
-              title={(readOf[b.id] ?? 0) ? `Remove read ${readOf[b.id]}'s marks (Undo for 6 s)` : "Remove this book's highlights, notes and bookmarks (Undo for 6 s)"}
+              title={(readOf[b.id] ?? 0) ? `Remove read ${readOf[b.id]}'s marks (Ctrl Z puts them back)` : "Remove this book's highlights, notes and bookmarks (Ctrl Z puts them back)"}
               disabled={!inBook.length}
-              onClick={() => removeAll({ bookId: b.id, title: b.title, marks: inBook, read: readOf[b.id] ?? 0 })}
+              onClick={() => removeAll(b.id, b.title, inBook, readOf[b.id] ?? 0)}
             >
               <i className="ms">delete</i>
             </button>
@@ -326,20 +287,6 @@ export function BookmarksPage() {
           )}
         </section>
       ))}
-      {pending &&
-        createPortal(
-        <div className="undobar" role="status" key={`${pending.bookId}-${pending.marks.length}`}>
-          <span>
-            {plural(pending.marks.length, "mark")} removed from <b>{pending.title}</b>
-            {pending.read ? ` (read ${pending.read})` : ""}
-          </span>
-          <button type="button" className="pill" onClick={undo}>
-            <i className="ms">undo</i>Undo
-          </button>
-          <i className="undotime" aria-hidden="true" />
-        </div>,
-          document.body,
-        )}
       {diffFor != null && data[diffFor]?.reads && (
         <ReadsDiff
           title={books?.find((x) => x.id === diffFor)?.title ?? ""}
