@@ -13,6 +13,7 @@ pub mod pace;
 pub mod pair;
 pub mod place;
 pub mod session;
+pub mod words;
 
 use crate::db;
 use crate::grimmory::conn_of;

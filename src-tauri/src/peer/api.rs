@@ -127,6 +127,8 @@ fn route_paired(app: &AppHandle, method: &str, segs: &[&str], v: &Value, ask: &A
         ("POST", ["katana-sync", "v1", "match"]) => match_books(app, v),
         ("GET", ["katana-sync", "v1", "reading"]) => ok(super::books::reading_json(&conn_of(app), sync::open_book_id())),
         ("GET", ["katana-sync", "v1", "reading-list"]) => ok(super::books::reading_list_json(&conn_of(app), sync::open_book_id())),
+        ("GET", ["katana-sync", "v1", "words"]) => super::words::list_json(&conn_of(app)).map_or_else(|e| fail(500, &e.to_string()), ok),
+        ("POST", ["katana-sync", "v1", "words"]) => super::words::post(app, v).map_or_else(|e| fail(500, &e), ok),
         ("GET", ["api", "v1", "books", id, "content"]) => num(id).map_or_else(|| fail(404, "No such book"), |id| content(app, id, ask)),
         ("POST", ["api", "v1", "books", "progress"]) => progress(app, v, device),
         ("POST", ["api", "v1", "reading-sessions"]) => reading_session(app, v, device),
