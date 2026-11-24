@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api } from "../lib/api";
 import icon from "../assets/katana-icon.svg";
+import { BackButton } from "./BackBar";
 
 const win = getCurrentWindow();
 
@@ -64,6 +65,7 @@ export function TitleBar({ onFold, foldIcon, foldLabel, query, setQuery, searchR
       <button type="button" className="tbi" aria-label={foldLabel} title={foldLabel} onClick={onFold}>
         <i className="ms">{foldIcon}</i>
       </button>
+      <BackButton />
       <img className="appicon" src={icon} alt="" data-tauri-drag-region draggable={false} />
       <span className="appname" data-tauri-drag-region>
         Katana<em data-tauri-drag-region>刀</em>

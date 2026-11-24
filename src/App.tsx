@@ -7,7 +7,7 @@ import { api, grimmory, READABLE, type Dl, type GStatus, type ScanState } from "
 import { useStore } from "./lib/store";
 import { TitleBar } from "./components/TitleBar";
 import { Rail, Sidebar } from "./components/Sidebar";
-import { BackBar } from "./components/BackBar";
+import { useBackKeys } from "./components/BackBar";
 import { LocalPage, addBooks } from "./pages/LocalPage";
 import { SettingsPage, stepAppZoom } from "./pages/OtherPages";
 import { JournalPage } from "./pages/JournalPage";
@@ -72,6 +72,7 @@ export function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [drawer, setDrawer] = useState(false);
   useTheme();
+  useBackKeys();
 
   // PDF covers, drawn from their first pages in the background
   useEffect(() => startPdfCovers(), []);
@@ -297,7 +298,6 @@ export function App() {
               </>
             )}
             <main className="main">
-              <BackBar />
               <div className="pagebox">{pageView}</div>
             </main>
           </div>
