@@ -1,6 +1,16 @@
-My words as a graph, and Grimmory sync that keeps up in the background.
+A reading dashboard on Local, Back on every page, Ctrl Z, quote cards, and pairing with Katana by its code alone.
 
 ## New in __VERSION__
+
+- **A reading dashboard on Local.** "Pick up where you left off" sits at the top: the book you read last, large, with its chapter, your last note and the time left at your pace, the other books you have open beside it, and the ones gone quiet for two weeks (Set aside moves one off the band). Inside a folder it shows that folder's books. Folder cards are smaller and list the books you're reading in each, with how far you are. The author now shows under every cover. Hide folds the band to one line.
+- **Back.** ← Back in the title bar, beside the sidebar button, goes back a step from anywhere: a folder, a Settings section, a list, a book's page, a search, a Journal day. Alt ← and your mouse's back button do the same (in a book, they take you back to where you were before a jump).
+- **Ctrl Z undoes, Ctrl Y puts it back.** A removed highlight, note, bookmark or word, a highlight's colour, an edited note, a book's reading status, a list or a book taken off one, a changed cover, a folder taken off Local, a book set aside: each comes back with Ctrl Z, as many steps back as you like. A bar at the bottom says what changed and stays until your next change.
+- **Share a highlight as an image**, as on the phone: on paper, dusk or teal, the book's cover colours, the book's cover itself, or a picture of your own (pick one or drop it on the window), blurred or sharp, square or tall. Save image puts it in Pictures\Katana; Copy image puts it on the clipboard to paste into a chat. It's on a highlight's card in a book and on a right-click in Bookmarks.
+- **Scroll keeps going between chapters.** In Scroll mode the wheel and the touchpad carry on into the next chapter instead of stopping at a chapter's end.
+- **Pairing with Katana by the code alone.** Sync on this Wi-Fi has its own page in Settings, with the code, the time it's good for, and this PC's address as Katana sees it. On the phone (Katana 1.3.0), Settings › Sources › Katana Desk finds this PC by itself, so you only type the code; a code that ran out or was wrong says so. After pairing, the book you're reading here comes to the phone, downloaded there if it isn't, and its place and marks keep in step both ways. A pill at the top of Local shows a sync while it runs and when it's done, and reading on the phone counts toward a book's time left here.
+- Settings' boxes give their contents room on every side (the keyboard map, Cover size and Reading defaults ran into their edges).
+
+## New in 0.3.0
 
 - **The words graph.** My words has a Graph view beside the list: each book with the words you saved from it around it, and words that mean the same joined by a zigzag, across books too. Zoom out and the books become small rectangles, zoom in and they're covers again. Hover a word to light up its synonyms, click it for its meaning, sentence and reviews, Open in book or Review it. Pick one book to see its cover in the middle and its words round it. Play the links brings your words in the order you saved them.
 - **Grimmory keeps up in the background**, whichever page is open, and catches up as soon as it's back after being away (it used to wait up to half an hour).
