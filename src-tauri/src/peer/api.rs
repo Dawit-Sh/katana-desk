@@ -129,6 +129,7 @@ fn route_paired(app: &AppHandle, method: &str, segs: &[&str], v: &Value, ask: &A
         ("GET", ["katana-sync", "v1", "reading-list"]) => ok(super::books::reading_list_json(&conn_of(app), sync::open_book_id())),
         ("GET", ["katana-sync", "v1", "words"]) => super::words::list_json(&conn_of(app)).map_or_else(|e| fail(500, &e.to_string()), ok),
         ("POST", ["katana-sync", "v1", "words"]) => super::words::post(app, v).map_or_else(|e| fail(500, &e), ok),
+        ("GET", ["katana-sync", "v1", "reading-sessions"]) => own_reading(app),
         ("GET", ["api", "v1", "books", id, "content"]) => num(id).map_or_else(|| fail(404, "No such book"), |id| content(app, id, ask)),
         ("POST", ["api", "v1", "books", "progress"]) => progress(app, v, device),
         ("POST", ["api", "v1", "reading-sessions"]) => reading_session(app, v, device),
@@ -167,16 +168,31 @@ fn content(app: &AppHandle, id: i64, ask: &Ask) -> Reply {
 /// A reading session on the device (Grimmory's shape), for the pace this PC's dashboard counts time left by.
 fn reading_session(app: &AppHandle, v: &Value, device: &pair::Device) -> Reply {
     let Some(s) = super::pace::session_in(v) else { return fail(400, "bookId, startTime and endTime are needed") };
-    if book_row(app, s.book_id).is_none() {
-        return fail(404, "No such book");
-    }
-    match super::pace::take(&conn_of(app), &s, &device.device_id) {
-        Ok(counted) => {
-            if counted {
+    let known = book_row(app, s.book_id).is_some();
+    // the Journal, analytics, dashboard and the book's time count it once (a book not on this PC: the day only)
+    let (logged, paced) = {
+        let conn = conn_of(app);
+        let logged = super::time::count_device_session(&conn, &device.device_id, known.then_some(s.book_id), s.start_at, s.end_at, s.seconds);
+        let paced = if known { super::pace::take(&conn, &s, &device.device_id) } else { Ok(false) };
+        (logged, paced)
+    };
+    match (logged, paced) {
+        (Ok(logged), Ok(counted)) => {
+            if counted || logged {
                 let _ = app.emit("library-changed", ());
             }
             done()
         }
+        (Err(e), _) | (_, Err(e)) => fail(500, &e.to_string()),
+    }
+}
+
+/// This PC's own reading time for the device's Journal (never time that came from a device).
+fn own_reading(app: &AppHandle) -> Reply {
+    let id = desk_id(app);
+    let sessions = super::time::own_sessions(&conn_of(app), &id, None);
+    match sessions {
+        Ok(sessions) => ok(json!({ "deskId": id, "sessions": sessions })),
         Err(e) => fail(500, &e.to_string()),
     }
 }

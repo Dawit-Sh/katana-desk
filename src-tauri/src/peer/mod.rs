@@ -14,6 +14,7 @@ pub mod pair;
 pub mod place;
 pub mod session;
 pub mod words;
+pub mod time;
 
 use crate::db;
 use crate::grimmory::conn_of;
