@@ -874,7 +874,8 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     // The wheel turns one page per notch; a trackpad's stream of small deltas adds up to one turn.
     // In Scroll the wheel just scrolls.
     const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || scrolled()) return;
+      if (e.ctrlKey) return;
+      if (scrolled()) return onScrollWheel(e);
       e.preventDefault();
       const now = Date.now();
       if (now < wheelLock) return;
@@ -884,6 +885,34 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
         turn(wheelAcc > 0 ? "next" : "prev");
         wheelAcc = 0;
         wheelLock = now + 280;
+      }
+    };
+
+    // Scroll goes on from one chapter into the next (his note, 2026-11-24: "it should continuously scroll,
+    // not stop"): the wheel or the touchpad at a chapter's end opens the next chapter at its top, and at a
+    // chapter's top the one before at its end. A little more of a push than one notch, so a scroll that
+    // only just reaches the end doesn't jump.
+    let edgeAcc = 0;
+    const onScrollWheel = (e: WheelEvent) => {
+      const r = viewRef.current?.renderer as unknown as { start: number; end: number; viewSize: number; next: () => Promise<void>; prev: () => Promise<void> } | undefined;
+      if (!r) return;
+      const d0 = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      const d = e.deltaMode === 1 ? d0 * 40 : d0;
+      const atEnd = r.viewSize - r.end <= 2;
+      const atStart = r.start <= 1;
+      if (!((d > 0 && atEnd) || (d < 0 && atStart))) {
+        edgeAcc = 0;
+        return;
+      }
+      e.preventDefault();
+      const now = Date.now();
+      if (now < wheelLock) return;
+      if (Math.sign(edgeAcc) !== Math.sign(d)) edgeAcc = 0;
+      edgeAcc += d;
+      if (Math.abs(edgeAcc) >= 80) {
+        edgeAcc = 0;
+        wheelLock = now + 450;
+        void (d > 0 ? r.next() : r.prev());
       }
     };
 
