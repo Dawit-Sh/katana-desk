@@ -295,6 +295,11 @@ pub fn peer_set_enabled(app: AppHandle, on: bool) -> PeerStatus {
 /// "Pair a device": a new code, good for 5 minutes.
 #[tauri::command]
 pub fn peer_pair_open(app: AppHandle) -> PeerStatus {
+    // Pairing needs this PC to answer on the Wi-Fi: "Pair a device" turns that on when it's off.
+    if !enabled(&app) {
+        let _ = db::set_setting(&conn_of(&app), "peer.enabled", "1");
+        let _ = start(&app);
+    }
     peer(&app).pairing.lock().unwrap().open(db::now());
     status_of(&app)
 }

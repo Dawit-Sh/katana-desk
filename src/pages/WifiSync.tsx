@@ -100,12 +100,15 @@ export function WifiSync() {
             </div>
           </div>
         )}
-        {st.running && !code && (
+        {!code && (
           <div className="srow">
             <i className="ms" style={{ color: "var(--k-var)" }}>add_link</i>
             <div className="tx">
               <b>Pair a device</b>
-              <small style={{ whiteSpace: "normal" }}>Shows a code to type in Katana. Each code pairs one device and lasts 5 minutes.</small>
+              <small style={{ whiteSpace: "normal" }}>
+                {st.running ? "Shows a code" : "Turns on sync on this Wi-Fi and shows a code"} to type in Katana. Each code pairs
+                one device and lasts 5 minutes.
+              </small>
             </div>
             <button type="button" className="pill fill" onClick={async () => setSt(await invoke<PeerStatus>("peer_pair_open"))}>
               Pair a device
