@@ -259,6 +259,22 @@ mod tests {
     }
 
     #[test]
+    fn every_book_read_lately_is_listed_the_open_one_first() {
+        let c = db();
+        let now = crate::db::now();
+        add(&c, 1, Some(now - 1000), Some(0.2), false);
+        add(&c, 2, Some(now - 500), Some(1.0), false); // finished
+        add(&c, 3, Some(now - 90 * 24 * 3600 * 1000), Some(0.4), false); // not read lately
+        add(&c, 4, Some(now - 2000), Some(0.5), false);
+        assert_eq!(reading_ids(&c, Some(4)), vec![4, 1]);
+        assert_eq!(reading_ids(&c, None), vec![1, 4]);
+        let list = reading_list_json(&c, Some(4));
+        assert_eq!(list["books"].as_array().map(Vec::len), Some(2));
+        assert_eq!(list["books"][0]["open"], true);
+        assert_eq!(list["books"][1]["open"], false);
+    }
+
+    #[test]
     fn nothing_read_yet() {
         let c = db();
         add(&c, 1, None, None, false);
