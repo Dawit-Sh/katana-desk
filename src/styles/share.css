@@ -1,0 +1,44 @@
+/* Share as an image: the card's preview on the left, its ground and shape on the right (the approved
+   mockup, 2026-11-24 UI round, item 3). */
+.sh-scrim { z-index: 75 }
+.sh { width: min(820px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--k-surface); color: var(--k-on); border-radius: 28px; box-shadow: 0 24px 70px var(--k-shadow); padding: 18px 22px 22px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 16px 22px; align-items: start; outline: none; transition: box-shadow .12s }
+.sh.dropping { box-shadow: 0 24px 70px var(--k-shadow), inset 0 0 0 2px var(--k-pri) }
+.sh-hd { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin: 0 -8px -4px 0 }
+.sh-hd b { flex: 1; min-width: 0; font-size: 20px; font-weight: 600 }
+.sh-prev { display: grid; place-items: center; min-width: 0 }
+/* the card at its full size, scaled down to fit (its own ratio kept) */
+.sh-prev canvas { display: block; max-width: 100%; max-height: calc(100vh - 150px); width: auto; height: auto; border-radius: 14px; background: var(--k-sch) }
+.sh-prev canvas.wait { opacity: 0 }
+.sh-ctl { display: grid; gap: 16px; align-content: start; min-width: 0; font-size: 13px }
+.sh-lbl { color: var(--k-var); font-weight: 600; font-size: 12.5px; margin-bottom: 8px }
+.sh-sws { display: flex; gap: 8px; flex-wrap: wrap }
+.sh-sw { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--g, var(--k-sch)); background-size: cover; background-position: center; flex: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k-on) 12%, transparent) }
+.sh-sw::after { content: ""; width: 11px; height: 11px; border-radius: 4px; background: var(--d) }
+.sh-sw.pic::after { display: none }
+.sh-sw.add { background: var(--k-sch); color: var(--k-var) }
+.sh-sw.add:hover { background: var(--k-schh); color: var(--k-on) }
+.sh-sw.add .ms { font-size: 20px }
+.sh-sw.on { outline: 3px solid var(--k-pri); outline-offset: 1px }
+.sh-sw:focus-visible { outline: 3px solid var(--k-pri); outline-offset: 1px }
+.sh-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+.sh-pair { display: contents }
+.sh-chip { height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--k-outv); display: inline-flex; align-items: center; gap: 6px; color: var(--k-on); font-size: 13px; font-weight: 600; white-space: nowrap }
+.sh-chip:hover { background: var(--k-cap-hover) }
+.sh-chip .ms { font-size: 17px; margin-left: -4px }
+.sh-chip.on { background: var(--k-pric); color: var(--k-onpric); border-color: transparent }
+.sh-hint { font-size: 12px; color: var(--k-dim); margin: 0 }
+.sh-foot { display: grid; gap: 10px; margin-top: 4px }
+.sh-msg { font-size: 12.5px; color: var(--k-var); display: flex; gap: 4px 10px; flex-wrap: wrap; align-items: baseline }
+.sh-msg.err { color: #e6837a }
+:root[data-tone="light"] .sh-msg.err { color: #b3261e }
+.sh-link { color: var(--k-link); font-weight: 600; font-size: 12.5px; padding: 0 }
+.sh-link:hover { text-decoration: underline }
+.sh-btns { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap }
+.sh-btns .pill { height: 38px; padding: 0 18px; font-weight: 600; font-size: 13.5px }
+.sh-btns .pill:disabled { opacity: .55 }
+.sh-menu { position: fixed; z-index: 80 }
+
+@media (max-width: 760px) {
+  .sh { grid-template-columns: minmax(0, 1fr) }
+  .sh-prev canvas { max-height: 56vh }
+}

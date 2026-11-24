@@ -14,6 +14,7 @@ import { BookMenu, ListsPage } from "./pages/ListsPage";
 import { Palette } from "./components/Palette";
 import { KeyMap } from "./components/KeyMap";
 import { CoverDialog } from "./components/CoverDialog";
+import { ShareHost, shareOpen } from "./components/ShareImage";
 import { BookmarksPage } from "./pages/BookmarksPage";
 import { WordsPage } from "./pages/WordsPage";
 import { GrimmoryPage } from "./pages/GrimmoryPage";
@@ -134,8 +135,8 @@ export function App() {
   useEffect(() => {
     const un = getCurrentWebview().onDragDropEvent((e) => {
       const st = useStore.getState();
-      // Change cover takes a dropped picture itself; a book's own window takes no books
-      if (st.coverFor || st.bookWindow) return st.setDropping(false);
+      // Change cover and Share as an image take a dropped picture themselves; a book's own window takes no books
+      if (st.coverFor || shareOpen() || st.bookWindow) return st.setDropping(false);
       if (e.payload.type === "enter" || e.payload.type === "over") st.setDropping(true);
       else if (e.payload.type === "leave") st.setDropping(false);
       else if (e.payload.type === "drop") {
@@ -234,6 +235,7 @@ export function App() {
       {s.keymap && <KeyMap />}
       {s.coverFor && <CoverDialog key={s.coverFor.key} t={s.coverFor} />}
       {s.menu && <BookMenu m={s.menu} />}
+      <ShareHost />
     </>
   );
 
