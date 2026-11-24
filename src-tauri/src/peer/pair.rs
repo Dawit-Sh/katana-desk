@@ -1,7 +1,8 @@
 //! Pairing a phone with this PC: Settings shows a 6-digit code while "Pair a device" is open (a new code
 //! each time, good for 5 minutes, one device per code). The phone sends it once and gets a token (32
 //! random bytes, hex) that this PC keeps only as its SHA-256. Five wrong codes in a row close pairing for
-//! a minute.
+//! a minute. A code that ran out, or no code showing, is told apart from a wrong one, so the phone can say
+//! which (and neither counts as a wrong try: no code could have worked).
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
@@ -36,8 +37,26 @@ pub struct Pairing {
 #[derive(Debug, PartialEq)]
 pub enum Try {
     Ok,
+    /// A code is showing and this isn't it
     Wrong,
+    /// The code shown ran out (5 minutes): a new one is needed
+    Expired,
+    /// No code is showing here (pairing closed, or its code already paired a device)
+    Closed,
     Locked,
+}
+
+impl Try {
+    /// The word a refusal carries (`reason` in the answer), for the phone to say what to do.
+    pub fn reason(&self) -> &'static str {
+        match self {
+            Try::Ok => "ok",
+            Try::Wrong => "wrong",
+            Try::Expired => "expired",
+            Try::Closed => "closed",
+            Try::Locked => "locked",
+        }
+    }
 }
 
 impl Pairing {
@@ -61,8 +80,11 @@ impl Pairing {
         if self.locked(now) {
             return Try::Locked;
         }
-        let ok = matches!(&self.code, Some((c, until)) if *until > now && same(c, code.trim()));
-        if ok {
+        let Some((c, until)) = &self.code else { return Try::Closed };
+        if *until <= now {
+            return Try::Expired;
+        }
+        if same(c, code.trim()) {
             // one device per code
             self.code = None;
             self.wrong = 0;
@@ -176,8 +198,8 @@ mod tests {
         assert_eq!(c.len(), 6);
         assert!(c.bytes().all(|b| b.is_ascii_digit()));
         assert_eq!(p.check(&c, NOW + 1000), Try::Ok);
-        // one device per code
-        assert_eq!(p.check(&c, NOW + 2000), Try::Wrong);
+        // one device per code: after it, no code is showing
+        assert_eq!(p.check(&c, NOW + 2000), Try::Closed);
     }
 
     #[test]
@@ -186,7 +208,23 @@ mod tests {
         let c = p.open(NOW);
         assert!(p.current(NOW + CODE_LIFE_MS - 1).is_some());
         assert!(p.current(NOW + CODE_LIFE_MS).is_none());
-        assert_eq!(p.check(&c, NOW + CODE_LIFE_MS + 1), Try::Wrong);
+        // the right code and any other: it ran out, said as such
+        assert_eq!(p.check(&c, NOW + CODE_LIFE_MS + 1), Try::Expired);
+        assert_eq!(p.check("123", NOW + CODE_LIFE_MS + 1), Try::Expired);
+        // a new code works at once
+        let c2 = p.open(NOW + CODE_LIFE_MS + 2);
+        assert_eq!(p.check(&c2, NOW + CODE_LIFE_MS + 3), Try::Ok);
+    }
+
+    #[test]
+    fn a_ran_out_code_doesnt_count_toward_the_lock() {
+        let mut p = Pairing::default();
+        p.open(NOW);
+        for i in 0..10 {
+            assert_eq!(p.check("000000", NOW + CODE_LIFE_MS + i), Try::Expired);
+        }
+        let c = p.open(NOW + CODE_LIFE_MS + 20);
+        assert_eq!(p.check(&c, NOW + CODE_LIFE_MS + 21), Try::Ok);
     }
 
     #[test]
@@ -194,7 +232,8 @@ mod tests {
         let mut p = Pairing::default();
         let c = p.open(NOW);
         p.close();
-        assert_eq!(p.check(&c, NOW), Try::Wrong);
+        assert_eq!(p.check(&c, NOW), Try::Closed);
+        assert_eq!(Pairing::default().check("123456", NOW), Try::Closed);
     }
 
     #[test]

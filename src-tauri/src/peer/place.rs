@@ -21,6 +21,9 @@ pub struct PeerPlace {
     pub page: Option<i64>,
     /// When it landed here (this PC's clock)
     pub at: i64,
+    /// The phone that sent it (its name), for the question in the reader
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
 }
 
 impl PeerPlace {
@@ -138,8 +141,19 @@ mod tests {
     fn desk(cfi: &str, f: f64, place_at: i64, synced_at: Option<i64>) -> DeskPlace {
         DeskPlace { location: Some(cfi.into()), fraction: Some(f), href: None, place_at: Some(place_at), served_at: None, synced_at }
     }
+    #[test]
+    fn a_phone_place_keeps_its_phone_and_older_rows_still_read() {
+        let p = PeerPlace { cfi: Some("epubcfi(/6/4!/4/2)".into()), href: None, fraction: Some(0.1), page: None, at: NOW, device: Some("Pixel".into()) };
+        let back: PeerPlace = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back.device.as_deref(), Some("Pixel"));
+        // a row written before the phone's name was kept
+        let old: PeerPlace = serde_json::from_str(r#"{"cfi":null,"href":"ch8","fraction":0.58,"page":null,"at":1}"#).unwrap();
+        assert_eq!(old.device, None);
+        assert!(!serde_json::to_string(&old).unwrap().contains("device"));
+    }
+
     fn phone(cfi: &str, f: f64, at: i64) -> PeerPlace {
-        PeerPlace { cfi: Some(cfi.into()), href: None, fraction: Some(f), page: None, at }
+        PeerPlace { cfi: Some(cfi.into()), href: None, fraction: Some(f), page: None, at, device: None }
     }
 
     #[test]
@@ -186,7 +200,7 @@ mod tests {
     #[test]
     fn a_phone_place_waits_for_an_answer_until_taken_or_turned_down() {
         let mut d = desk("c", 0.62, NOW - 10 * MIN, None);
-        let p = PeerPlace { cfi: None, href: Some("ch2".into()), fraction: Some(0.125), page: None, at: NOW - MIN };
+        let p = PeerPlace { cfi: None, href: Some("ch2".into()), fraction: Some(0.125), page: None, at: NOW - MIN, device: None };
         assert!(waiting(&d, &p));
         // "stay": this PC's place is chosen after the phone's landed
         d.served_at = Some(NOW);

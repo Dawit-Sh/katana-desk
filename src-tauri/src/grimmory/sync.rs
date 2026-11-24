@@ -27,9 +27,9 @@ fn open_book() -> &'static Mutex<Option<i64>> {
     static B: OnceLock<Mutex<Option<i64>>> = OnceLock::new();
     B.get_or_init(Default::default)
 }
-/// Offers that came from a phone on this Wi-Fi (`peer`), not from Grimmory.
-fn peer_offers() -> &'static Mutex<std::collections::HashSet<i64>> {
-    static P: OnceLock<Mutex<std::collections::HashSet<i64>>> = OnceLock::new();
+/// Offers that came from a phone on this Wi-Fi (`peer`), not from Grimmory, with the phone's name.
+fn peer_offers() -> &'static Mutex<HashMap<i64, String>> {
+    static P: OnceLock<Mutex<HashMap<i64, String>>> = OnceLock::new();
     P.get_or_init(Default::default)
 }
 
@@ -38,13 +38,30 @@ pub fn is_open(id: i64) -> bool {
     *open_book().lock().unwrap() == Some(id)
 }
 
+/// The book open in the reader here, if one is.
+pub fn open_book_id() -> Option<i64> {
+    *open_book().lock().unwrap()
+}
+
 /// A phone's place that wins but sits behind this PC's, or for a book open here: the reader asks, as it
 /// does for Grimmory's (its answer goes to `peer::answer`).
-pub fn offer_from_peer(app: &AppHandle, id: i64, p: ServerPlace) {
+pub fn offer_from_peer(app: &AppHandle, id: i64, p: ServerPlace, from: &str) {
     offers().lock().unwrap().insert(id, p);
-    peer_offers().lock().unwrap().insert(id);
+    peer_offers().lock().unwrap().insert(id, from.to_string());
     if is_open(id) {
         let _ = app.emit("grimmory-offer", id);
+    }
+}
+
+/// A phone sent a newer place: the one it sent before and that still waits for an answer here is no
+/// longer the phone's place, so it isn't asked about any more (the newer one is weighed instead).
+pub fn drop_peer_offer(app: &AppHandle, id: i64) {
+    if peer_offers().lock().unwrap().remove(&id).is_some() {
+        offers().lock().unwrap().remove(&id);
+        if is_open(id) {
+            // the reader looks again and finds no question
+            let _ = app.emit("grimmory-offer", id);
+        }
     }
 }
 
@@ -264,7 +281,7 @@ fn apply(app: &AppHandle, id: i64, p: &ServerPlace, use_cfi: bool) {
 
 /// Unread here too: no place, not in Continue reading, not finished.
 pub fn clear(app: &AppHandle, id: i64) {
-    if peer_offers().lock().unwrap().remove(&id) {
+    if peer_offers().lock().unwrap().remove(&id).is_some() {
         offers().lock().unwrap().remove(&id);
     }
     {
@@ -345,7 +362,7 @@ async fn post(app: &AppHandle, id: i64, l: &Linked) -> GRes<()> {
 /// Works out one book's place with Grimmory and does what the rules say.
 async fn reconcile(app: &AppHandle, id: i64, timeout: Option<Duration>) -> GRes<Option<Decision>> {
     let Some(l) = linked(app, id) else { return Ok(None) };
-    if peer_offers().lock().unwrap().contains(&id) {
+    if peer_offers().lock().unwrap().contains_key(&id) {
         // a phone's place is waiting for an answer here; Grimmory's is weighed after it
         return Ok(None);
     }
@@ -463,6 +480,8 @@ pub struct Offer {
     pub fraction: Option<f64>,
     pub at: Option<i64>,
     pub page: Option<i64>,
+    /// The phone it came from (its name), when it's a phone's place on this Wi-Fi, not Grimmory's
+    pub from: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -484,7 +503,8 @@ fn place_of(app: &AppHandle, id: i64) -> (Option<String>, Option<f64>, Option<i6
 }
 
 fn offer_of(id: i64) -> Option<Offer> {
-    offers().lock().unwrap().get(&id).map(|p| Offer { fraction: p.fraction, at: p.at, page: p.page })
+    let from = peer_offers().lock().unwrap().get(&id).cloned();
+    offers().lock().unwrap().get(&id).map(|p| Offer { fraction: p.fraction, at: p.at, page: p.page, from })
 }
 
 /// A book opens: a Local copy is matched to Grimmory first if it can be, then Grimmory's place is
@@ -521,7 +541,7 @@ pub fn grimmory_offer(id: i64) -> Option<Offer> {
 #[tauri::command]
 pub async fn grimmory_answer(app: AppHandle, id: i64, go: bool) -> OpenPlace {
     let offered = offers().lock().unwrap().remove(&id);
-    let from_peer = peer_offers().lock().unwrap().remove(&id);
+    let from_peer = peer_offers().lock().unwrap().remove(&id).is_some();
     if let (Some(p), true) = (&offered, from_peer) {
         crate::peer::answer(&app, id, p, go);
     } else if let Some(p) = offered {
@@ -550,7 +570,7 @@ pub async fn grimmory_answer(app: AppHandle, id: i64, go: bool) -> OpenPlace {
 /// Grimmory's newer place by itself (returned, for "Back to p. N"); otherwise it asks, as at the start.
 #[tauri::command]
 pub async fn grimmory_keep_up(app: AppHandle, id: i64, follow: bool) -> Option<OpenPlace> {
-    if !g(&app).signed_in() || *open_book().lock().unwrap() != Some(id) || peer_offers().lock().unwrap().contains(&id) {
+    if !g(&app).signed_in() || *open_book().lock().unwrap() != Some(id) || peer_offers().lock().unwrap().contains_key(&id) {
         return None;
     }
     let pending = linked(&app, id)?.local.pending;

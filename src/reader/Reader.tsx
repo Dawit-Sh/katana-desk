@@ -1263,7 +1263,7 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
     host.addEventListener("wheel", onWheel, { passive: false });
     // Grimmory's place moved while the book is open (read on the Fire): ask
     const unOffer = listen<number>("grimmory-offer", (e) => {
-      if (e.payload === book.id && Date.now() - followed.current > 3000) grimmory.offer(book.id).then((o) => o && setOffer(o)).catch(() => {});
+      if (e.payload === book.id && Date.now() - followed.current > 3000) grimmory.offer(book.id).then((o) => setOffer(o ?? null)).catch(() => {});
     });
     // highlights or bookmarks changed on Grimmory (or here, by a sync)
     const unMarks = listen<number>("marks-changed", (e) => {
@@ -1888,11 +1888,11 @@ export function Reader({ book, onClose, startAt }: { book: Book; onClose: () => 
       )}
 
       {offer && (
-        <div className="offer" role="alertdialog" aria-label="Grimmory has an earlier place">
+        <div className="offer" role="alertdialog" aria-label={`${offer.from ?? "Grimmory"} has an earlier place`}>
           <i className="ms">cloud_sync</i>
           <span>
-            Grimmory has this book at {offer.page != null ? `p. ${offer.page}` : `${Math.round((offer.fraction ?? 0) * 100)}%`}
-            {offer.at ? `, read ${fmtWhen(offer.at).replace(/^Today, /, "today at ")}` : ""} on another device
+            {offer.from ?? "Grimmory"} has this book at {offer.page != null ? `p. ${offer.page}` : `${Math.round((offer.fraction ?? 0) * 100)}%`}
+            {offer.at ? `, read ${fmtWhen(offer.at).replace(/^Today, /, "today at ")}` : ""}{offer.from ? "" : " on another device"}
           </span>
           <button type="button" className="pill" onClick={() => answer(true)}>
             Go there
