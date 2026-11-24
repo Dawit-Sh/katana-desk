@@ -98,6 +98,7 @@ export function MarkRows({
   onGo,
   onRemove,
   onSaveBookmark,
+  onContext,
   empty,
 }: {
   marks: Mark[];
@@ -110,6 +111,8 @@ export function MarkRows({
   onGo: (m: Mark, ctrl?: boolean) => void;
   onRemove: (m: Mark) => void;
   onSaveBookmark: (b: Bookmark, title: string | null, note: string | null) => void;
+  /** a highlight right-clicked (the Bookmarks page: Share as an image) */
+  onContext?: (h: Highlight, e: React.MouseEvent) => void;
   empty: React.ReactNode;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
@@ -131,7 +134,7 @@ export function MarkRows({
       const h = m.h;
       const where = placeLabel(h);
       return (
-        <div key={keyOf(m)} className="mr">
+        <div key={keyOf(m)} className="mr" onContextMenu={onContext && ((e) => onContext(h, e))}>
           <button type="button" className="mgo" onClick={(e) => onGo(m, e.ctrlKey)}>
             <i className="cbar" style={{ "--c": hexOf(h.color) } as React.CSSProperties} />
             <div>

@@ -16,6 +16,7 @@ mod peer;
 mod reads;
 mod resumable;
 mod search;
+mod share;
 mod wordgraph;
 mod words;
 
@@ -865,6 +866,8 @@ pub fn run() {
             covers::cover_file,
             covers::openlibrary_search,
             covers::openlibrary_cover,
+            share::share_pictures_dir,
+            share::share_save_image,
             lists::lists,
             lists::list_create,
             reads::book_reads,

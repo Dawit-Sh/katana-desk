@@ -148,6 +148,7 @@ export function HighlightCard({
   onLook,
   onNote,
   onCopy,
+  onShare,
   onDelete,
 }: {
   h: Highlight;
@@ -158,6 +159,8 @@ export function HighlightCard({
   onLook: (color: Colour, style: Style) => void;
   onNote: (note: string | null) => void;
   onCopy: () => void;
+  /** Share as an image */
+  onShare?: () => void;
   onDelete: () => void;
 }) {
   const { ref, style } = useCardPlace(anchor, room);
@@ -255,6 +258,11 @@ export function HighlightCard({
         <button type="button" className="pbtn" aria-label="Copy the words" title="Copy the words" onClick={onCopy}>
           <i className="ms">content_copy</i>
         </button>
+        {onShare && (
+          <button type="button" className="pbtn" aria-label="Share as an image" title="Share as an image" onClick={onShare}>
+            <i className="ms">share</i>
+          </button>
+        )}
         <button type="button" className="pbtn" aria-label="Delete the highlight" title="Delete the highlight (Delete)" onClick={onDelete}>
           <i className="ms">delete</i>
         </button>

@@ -13,6 +13,7 @@ import { CaptionButtons } from "../components/TitleBar";
 import { ContentsPanel, MarksPanel, Panel, type TocItem } from "./panels";
 import { COLOURS, PDF_HEX, exportMarkdown, hls, marks as marksApi, marksApi as marksSync, pdfAnnots, type Annot, type Bookmark, type Colour, type Highlight, type Style } from "./marks";
 import { HighlightCard, SelectionCard, copyText, type Anchor } from "./cards";
+import { openShare } from "../components/ShareImage";
 import { logRevisit, type Mark } from "./marklist";
 import { WordCard, type WordAsk } from "./WordCard";
 import { Review } from "../components/Review";
@@ -1913,6 +1914,10 @@ export function PageReader({ book, onClose, startAt }: { book: Book; onClose: ()
               onCopy={async () => {
                 await copyText(h.text);
                 showToast({ text: "Copied" });
+              }}
+              onShare={() => {
+                setCard(null);
+                openShare({ text: h.text, book });
               }}
               onDelete={() => deleteHighlight(h)}
             />

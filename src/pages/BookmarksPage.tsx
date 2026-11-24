@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { api } from "../lib/api";
 import { ReadsDiff, type Reads } from "./ReadsDiff";
 import { Cover } from "../components/Cover";
+import { shareMenuAt } from "../components/ShareImage";
 import { m7, type Book } from "../lib/api";
 const readsApi = {
   get: (bookId: number) => invoke<Reads>("book_reads", { bookId }),
@@ -320,6 +321,7 @@ export function BookmarksPage() {
               }}
               onRemove={(m) => onRemove(b.id, m)}
               onSaveBookmark={(bk, t, n) => onSaveBookmark(b.id, bk, t, n)}
+              onContext={(h, e) => shareMenuAt(e, { text: h.text, book: b })}
               empty={`No ${tab === "all" ? "marks" : tab} in this book.`}
             />
             </div>
