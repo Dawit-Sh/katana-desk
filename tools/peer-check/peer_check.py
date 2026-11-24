@@ -3,8 +3,10 @@
   python -I peer_check.py http://127.0.0.1:47615 --code 123456 --book <path to a book in the desk's library>
   python -I peer_check.py http://127.0.0.1:47615 --token <64 hex> --book <path>
 
-Pairs (or uses a token), matches the book by format + size + KOReader partial MD5, then walks the
-Grimmory-shaped routes: place, status, reset, highlights, bookmarks. Prints each step; exits 1 on a miss.
+Pairs (or uses a token; a refused code says why: wrong, closed), matches the book by format + size + KOReader
+partial MD5, asks which book is being read, downloads the book's file (whole, and its end as a range), says a sync
+starts and ends, then walks the Grimmory-shaped routes: place, status, reset, highlights, bookmarks. Prints each
+step; exits 1 on a miss.
 Writes to the desk's test profile only: never point it at his real profile.
 """
 import argparse, hashlib, json, os, sys, urllib.request, urllib.error, uuid
@@ -37,6 +39,13 @@ class Desk:
         except urllib.error.HTTPError as e:
             raw = e.read()
             return e.code, (json.loads(raw) if raw else None)
+    def raw(self, path, headers=None):
+        req = urllib.request.Request(self.base + path, headers={"Authorization": "Bearer " + self.token, **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, dict(r.headers), r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers), e.read()
 
 fails = []
 def check(name, cond, extra=""):
@@ -54,18 +63,19 @@ def main():
     d = Desk(a.base, a.token)
 
     st, hello = d.call("GET", "/katana-sync/v1/hello", token=False)
-    check("hello", st == 200 and hello.get("app") == "katana-desk" and hello.get("protocol") == 1, json.dumps(hello))
+    check("hello", st == 200 and hello.get("app") == "katana-desk" and hello.get("protocol") == 1 and hello.get("deskId"), json.dumps(hello))
+    check("hello says whether a code is showing", isinstance(hello.get("pairing"), bool), json.dumps(hello))
 
     if a.code:
         wrong = "000000" if a.code != "000000" else "000001"
-        st, _ = d.call("POST", "/katana-sync/v1/pair", {"code": wrong, "deviceId": "x", "deviceName": "x"}, token=False)
-        check("wrong code is 403", st == 403, str(st))
+        st, r = d.call("POST", "/katana-sync/v1/pair", {"code": wrong, "deviceId": "x", "deviceName": "x"}, token=False)
+        check("wrong code is 403, reason wrong", st == 403 and (r or {}).get("reason") == "wrong", f"{st} {r}")
         st, p = d.call("POST", "/katana-sync/v1/pair", {"code": a.code, "deviceId": str(uuid.uuid4()), "deviceName": "peer_check"}, token=False)
         check("pair", st == 200 and len(p.get("token", "")) == 64, str(st))
         d.token = p["token"]
         print("token", d.token)
-        st, _ = d.call("POST", "/katana-sync/v1/pair", {"code": a.code, "deviceId": "y", "deviceName": "y"}, token=False)
-        check("a code pairs one device", st == 403, str(st))
+        st, r = d.call("POST", "/katana-sync/v1/pair", {"code": a.code, "deviceId": "y", "deviceName": "y"}, token=False)
+        check("a code pairs one device (then none is showing)", st == 403 and (r or {}).get("reason") == "closed", f"{st} {r}")
 
     st, _ = Desk(a.base, "f" * 64).call("GET", "/api/v1/books/1")
     check("unknown token is 401", st == 401, str(st))
@@ -80,6 +90,23 @@ def main():
     books = m.get("books", []) if m else []
     check("match finds the book (and not a size off)", st == 200 and len(books) == 1 and books[0]["key"] == "k1", json.dumps(m))
     bid = books[0]["bookId"]
+
+    # a sync said out loud, the book being read here, and a book's file
+    st, _ = d.call("POST", "/katana-sync/v1/sync", {"phase": "start"})
+    check("sync start", st == 200, str(st))
+    st, rd = d.call("GET", "/katana-sync/v1/reading")
+    check("which book is being read", st == 200 and "book" in (rd or {}), json.dumps(rd)[:300])
+    st, h, body = d.raw(f"/api/v1/books/{bid}/content")
+    check("the book's file", st == 200 and len(body) == size and h.get("Accept-Ranges") == "bytes" and h.get("ETag"), f"{st} {len(body)}")
+    tag = h.get("ETag", "")
+    st, h, tail = d.raw(f"/api/v1/books/{bid}/content", {"Range": f"bytes={size - 10}-", "If-Range": tag})
+    check("its last 10 bytes as a range", st == 206 and tail == body[-10:] and h.get("Content-Range") == f"bytes {size - 10}-{size - 1}/{size}", f"{st} {h.get('Content-Range')}")
+    st, _, _ = d.raw(f"/api/v1/books/{bid}/content", {"Range": f"bytes={size}-"})
+    check("a range past the end is 416", st == 416, str(st))
+    st, _ = d.call("POST", "/katana-sync/v1/sync", {"phase": "later"})
+    check("an unknown sync phase is 400", st == 400, str(st))
+    st, _ = d.call("POST", "/katana-sync/v1/sync", {"phase": "end", "books": 1, "changed": False})
+    check("sync end", st == 200, str(st))
 
     d.call("POST", "/api/v1/books/reset-progress?type=BOOKLORE", [bid])  # start unread
     st, b = d.call("GET", f"/api/v1/books/{bid}")

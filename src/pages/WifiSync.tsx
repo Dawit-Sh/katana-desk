@@ -7,6 +7,15 @@ import { useEffect, useState } from "react";
 import { fmtAgo } from "../lib/format";
 
 type Device = { deviceId: string; name: string; pairedAt: number; seenAt: number | null };
+/** What a phone changed here during one sync. */
+export type PeerChanges = { places: number; statuses: number; highlights: number; bookmarks: number; booksSent: number };
+/** A phone syncing now (`peer-sync` "start", and `syncing` in the status). */
+export type PeerSyncing = { deviceId: string; name: string; since: number; at: number; got: PeerChanges };
+/** A phone's sync that ended (`peer-sync` "end"): `phone` is the phone's own side, `quiet` when it just went quiet. */
+export type PeerSyncEnded = PeerSyncing & {
+  phone: { books: number | null; changed: boolean | null; problem: string | null };
+  quiet: boolean;
+};
 type PeerStatus = {
   enabled: boolean;
   running: boolean;
@@ -17,6 +26,8 @@ type PeerStatus = {
   code: string | null;
   codeUntil: number | null;
   devices: Device[];
+  syncing: PeerSyncing[];
+  lastSync: PeerSyncEnded | null;
 };
 
 export function WifiSync() {
@@ -96,7 +107,13 @@ export function WifiSync() {
             <i className="ms" style={{ color: "var(--k-var)" }}>smartphone</i>
             <div className="tx">
               <b>{d.name}</b>
-              <small>{d.seenAt ? `Last synced ${fmtAgo(d.seenAt)}` : "Paired, not synced yet"}</small>
+              <small>
+                {st.syncing.some((s) => s.deviceId === d.deviceId)
+                  ? "Syncing now…"
+                  : d.seenAt
+                    ? `Last synced ${fmtAgo(d.seenAt)}`
+                    : "Paired, not synced yet"}
+              </small>
             </div>
             <button type="button" className="pill" title={`Forget ${d.name}: it can't sync with this PC until it's paired again`} onClick={async () => setSt(await invoke<PeerStatus>("peer_forget", { deviceId: d.deviceId }))}>
               Forget

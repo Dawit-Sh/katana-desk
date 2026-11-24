@@ -73,7 +73,8 @@ export type Dl = {
   localId: number | null;
   openAfter: boolean;
 };
-export type Offer = { fraction: number | null; at: number | null; page: number | null };
+/** A place elsewhere to ask about: Grimmory's, or (`from`, its name) a phone's on this Wi-Fi. */
+export type Offer = { fraction: number | null; at: number | null; page: number | null; from?: string | null };
 export type OpenPlace = { location: string | null; fraction: number | null; offer: Offer | null; grimmoryId: number | null };
 export type ScanState = { scanning: boolean; lastScan: number | null; done: number; total: number };
 export type Library = { folders: Folder[]; books: Book[]; scan: ScanState };

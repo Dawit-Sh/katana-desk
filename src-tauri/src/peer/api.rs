@@ -5,6 +5,7 @@
 
 use super::pair::{self, Try};
 use super::place::{self as pp, DeskPlace, PeerPlace};
+use super::session::{Kind, PhoneSide};
 use super::{changed, desk_id, desk_name, peer, PROTOCOL};
 use crate::db;
 use crate::grimmory::place::{Decision, ServerPlace, PENDING_MARGIN_MS};
@@ -17,82 +18,164 @@ use tauri::{AppHandle, Emitter};
 
 const BODY_LIMIT: u64 = 4 << 20;
 
+pub enum Body {
+    Json(Value),
+    File(super::books::FileAnswer),
+}
+
 pub struct Reply {
     pub status: u16,
-    pub body: Option<Value>,
+    pub body: Option<Body>,
 }
 
 fn ok(v: Value) -> Reply {
-    Reply { status: 200, body: Some(v) }
+    Reply { status: 200, body: Some(Body::Json(v)) }
 }
 fn done() -> Reply {
     Reply { status: 200, body: None }
 }
 fn fail(status: u16, message: &str) -> Reply {
-    Reply { status, body: Some(json!({ "status": status, "message": message })) }
+    Reply { status, body: Some(Body::Json(json!({ "status": status, "message": message }))) }
+}
+/// A refusal with a word the phone acts on (`reason`), besides the words for people.
+fn refuse(status: u16, reason: &str, message: &str) -> Reply {
+    Reply { status, body: Some(Body::Json(json!({ "status": status, "reason": reason, "message": message }))) }
+}
+
+/// What a request carries besides its method and path.
+pub struct Ask<'a> {
+    pub auth: Option<&'a str>,
+    pub body: &'a str,
+    pub range: Option<&'a str>,
+    pub if_range: Option<&'a str>,
+    /// The caller's own address, when it's another machine on the network
+    pub from: Option<std::net::Ipv4Addr>,
+}
+
+fn header(req: &tiny_http::Request, name: &'static str) -> Option<String> {
+    req.headers().iter().find(|h| h.field.equiv(name)).map(|h| h.value.as_str().to_string())
 }
 
 pub fn handle(app: &AppHandle, mut req: tiny_http::Request) {
     let method = req.method().as_str().to_ascii_uppercase();
     let url = req.url().to_string();
     let path = url.split('?').next().unwrap_or("").to_string();
-    let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.as_str().to_string());
+    let (auth, range, if_range) = (header(&req, "Authorization"), header(&req, "Range"), header(&req, "If-Range"));
+    let from = match req.remote_addr().map(|a| a.ip()) {
+        Some(std::net::IpAddr::V4(ip)) if !ip.is_loopback() => Some(ip),
+        _ => None,
+    };
     let mut body = String::new();
     let _ = req.as_reader().take(BODY_LIMIT).read_to_string(&mut body);
-    let reply = route(app, &method, &path, auth.as_deref(), &body);
-    let resp = match reply.body {
-        Some(v) => tiny_http::Response::from_data(v.to_string().into_bytes()).with_header(
-            tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json; charset=utf-8"[..]).unwrap(),
-        ),
-        None => tiny_http::Response::from_data(Vec::new()),
+    let ask = Ask { auth: auth.as_deref(), body: &body, range: range.as_deref(), if_range: if_range.as_deref(), from };
+    let reply = route(app, &method, &path, &ask);
+    let status = tiny_http::StatusCode(reply.status);
+    let _ = match reply.body {
+        Some(Body::Json(v)) => {
+            let json_type = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json; charset=utf-8"[..]).unwrap();
+            req.respond(tiny_http::Response::from_data(v.to_string().into_bytes()).with_header(json_type).with_status_code(status))
+        }
+        Some(Body::File(f)) => {
+            let headers = f.headers.iter().filter_map(|(k, v)| tiny_http::Header::from_bytes(k.as_bytes(), v.as_bytes()).ok()).collect();
+            req.respond(tiny_http::Response::new(status, headers, f.reader, Some(f.len as usize), None))
+        }
+        None => req.respond(tiny_http::Response::from_data(Vec::new()).with_status_code(status)),
     };
-    let _ = req.respond(resp.with_status_code(reply.status));
 }
 
-fn route(app: &AppHandle, method: &str, path: &str, auth: Option<&str>, body: &str) -> Reply {
+fn route(app: &AppHandle, method: &str, path: &str, ask: &Ask) -> Reply {
     let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
-    let v: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    let v: Value = serde_json::from_str(ask.body).unwrap_or(Value::Null);
+    if let Some(ip) = ask.from {
+        // the network phones reach this PC on (for the address the pairing screen shows)
+        *peer(app).phone_ip.lock().unwrap() = Some(ip);
+    }
     match (method, segs.as_slice()) {
         ("GET", ["katana-sync", "v1", "hello"]) => return hello(app),
         ("POST", ["katana-sync", "v1", "pair"]) => return pair_device(app, &v),
         _ => {}
     }
-    let token = auth
+    let token = ask
+        .auth
         .map(str::trim)
         .and_then(|a| a.strip_prefix("Bearer ").or_else(|| a.strip_prefix("bearer ")))
         .map(str::trim)
         .unwrap_or("");
-    if token.is_empty() || pair::device_for(&conn_of(app), token, db::now()).is_none() {
-        return fail(401, "Not paired with this PC");
+    let device = if token.is_empty() { None } else { pair::device_for(&conn_of(app), token, db::now()) };
+    let Some(device) = device else { return fail(401, "Not paired with this PC") };
+    if let ("POST", ["katana-sync", "v1", "sync"]) = (method, segs.as_slice()) {
+        return sync_said(app, &device, &v);
     }
+    let reply = route_paired(app, method, &segs, &v, ask, &device);
+    if (200..300).contains(&reply.status) {
+        super::touched(app, &device, Kind::of(method, &segs));
+    }
+    reply
+}
+
+fn route_paired(app: &AppHandle, method: &str, segs: &[&str], v: &Value, ask: &Ask, device: &pair::Device) -> Reply {
     let num = |s: &str| s.parse::<i64>().ok();
-    match (method, segs.as_slice()) {
-        ("POST", ["katana-sync", "v1", "match"]) => match_books(app, &v),
-        ("POST", ["api", "v1", "books", "progress"]) => progress(app, &v),
-        ("POST", ["api", "v1", "books", "status"]) => set_status(app, &v),
-        ("POST", ["api", "v1", "books", "reset-progress"]) => reset(app, &v),
+    match (method, segs) {
+        ("POST", ["katana-sync", "v1", "match"]) => match_books(app, v),
+        ("GET", ["katana-sync", "v1", "reading"]) => ok(super::books::reading_json(&conn_of(app), sync::open_book_id())),
+        ("GET", ["api", "v1", "books", id, "content"]) => num(id).map_or_else(|| fail(404, "No such book"), |id| content(app, id, ask)),
+        ("POST", ["api", "v1", "books", "progress"]) => progress(app, v, device),
+        ("POST", ["api", "v1", "books", "status"]) => set_status(app, v),
+        ("POST", ["api", "v1", "books", "reset-progress"]) => reset(app, v),
         ("GET", ["api", "v1", "books", id]) => num(id).map_or_else(|| fail(404, "No such book"), |id| get_book(app, id)),
         ("GET", ["api", "v1", "annotations", "book", id]) => num(id).map_or_else(|| fail(404, "No such book"), |id| list_highlights(app, id)),
-        ("POST", ["api", "v1", "annotations"]) => add_highlight(app, &v),
-        ("PUT", ["api", "v1", "annotations", id]) => num(id).map_or_else(|| fail(404, "No such highlight"), |id| change_highlight(app, id, &v)),
+        ("POST", ["api", "v1", "annotations"]) => add_highlight(app, v),
+        ("PUT", ["api", "v1", "annotations", id]) => num(id).map_or_else(|| fail(404, "No such highlight"), |id| change_highlight(app, id, v)),
         ("DELETE", ["api", "v1", "annotations", id]) => num(id).map_or_else(|| fail(404, "No such highlight"), |id| remove_highlight(app, id)),
         ("GET", ["api", "v1", "bookmarks", "book", id]) => num(id).map_or_else(|| fail(404, "No such book"), |id| list_bookmarks(app, id)),
-        ("POST", ["api", "v1", "bookmarks"]) => add_bookmark(app, &v),
-        ("PUT", ["api", "v1", "bookmarks", id]) => num(id).map_or_else(|| fail(404, "No such bookmark"), |id| change_bookmark(app, id, &v)),
+        ("POST", ["api", "v1", "bookmarks"]) => add_bookmark(app, v),
+        ("PUT", ["api", "v1", "bookmarks", id]) => num(id).map_or_else(|| fail(404, "No such bookmark"), |id| change_bookmark(app, id, v)),
         ("DELETE", ["api", "v1", "bookmarks", id]) => num(id).map_or_else(|| fail(404, "No such bookmark"), |id| remove_bookmark(app, id)),
         _ => fail(404, "Not found"),
     }
 }
 
+/// A book's file, for a phone that doesn't have it (Grimmory's `.../content`, ranges and all).
+fn content(app: &AppHandle, id: i64, ask: &Ask) -> Reply {
+    let row: Option<(String, String, bool)> = conn_of(app)
+        .query_row("SELECT path, format, missing <> 0 FROM books WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()
+        .ok()
+        .flatten();
+    let Some((path, format, missing)) = row else { return fail(404, "No such book") };
+    if missing {
+        return fail(404, "That book's file isn't on this PC");
+    }
+    match super::books::file_answer(&path, &format.to_ascii_lowercase(), ask.range, ask.if_range) {
+        Ok(f) => Reply { status: f.status, body: Some(Body::File(f)) },
+        Err(status) => fail(status, "That book's file can't be read"),
+    }
+}
+
+/// Katana says its sync starts (`{"phase":"start"}`) or ended (`{"phase":"end", "books", "changed", "problem"}`).
+fn sync_said(app: &AppHandle, device: &pair::Device, v: &Value) -> Reply {
+    match text(v, "phase").as_deref() {
+        Some("start") => super::sync_started(app, device),
+        Some("end") => super::sync_ended(app, device, serde_json::from_value::<PhoneSide>(v.clone()).unwrap_or_default()),
+        _ => return fail(400, "phase is start or end"),
+    }
+    done()
+}
+
 // ---- pairing and matching ----
 
+/// Asked without a pairing: who this is. Only Katana Desk answers `"app": "katana-desk"` with its id, so a
+/// phone lists real desks only, not any computer with the port open.
 fn hello(app: &AppHandle) -> Reply {
+    let pairing = peer(app).pairing.lock().unwrap().current(db::now()).is_some();
     ok(json!({
         "app": "katana-desk",
         "protocol": PROTOCOL,
         "deskId": desk_id(app),
         "name": desk_name(),
         "version": env!("CARGO_PKG_VERSION"),
+        // a code is showing on this PC's screen now
+        "pairing": pairing,
     }))
 }
 
@@ -108,8 +191,10 @@ fn pair_device(app: &AppHandle, v: &Value) -> Reply {
     let now = db::now();
     let tried = peer(app).pairing.lock().unwrap().check(&code, now);
     match tried {
-        Try::Locked => fail(429, "Too many wrong codes: try again in a minute"),
-        Try::Wrong => fail(403, "That code is wrong or has run out"),
+        Try::Locked => refuse(429, tried.reason(), "Too many wrong codes: try again in a minute"),
+        Try::Wrong => refuse(403, tried.reason(), "That code isn't the one on this PC's screen"),
+        Try::Expired => refuse(403, tried.reason(), "That code ran out: make a new one on this PC"),
+        Try::Closed => refuse(403, tried.reason(), "No code is showing on this PC: Pair a device makes one"),
         Try::Ok => {
             let token = pair::new_token();
             if let Err(e) = pair::add_device(&conn_of(app), &device_id, &name, &token, now) {
@@ -164,7 +249,7 @@ fn paged(format: &str) -> bool {
     format == "pdf" || is_comic(format)
 }
 
-fn book_type(format: &str) -> String {
+pub fn book_type(format: &str) -> String {
     if is_comic(format) {
         "CBX".into()
     } else {
@@ -331,15 +416,18 @@ pub fn incoming_place(format: &str, v: &Value, now: i64) -> Option<PeerPlace> {
     } else {
         (None, None)
     };
-    let p = PeerPlace { cfi, href: if paged(format) { None } else { href }, fraction, page, at: now };
+    let p = PeerPlace { cfi, href: if paged(format) { None } else { href }, fraction, page, at: now, device: None };
     p.has_place().then_some(p)
 }
 
-fn progress(app: &AppHandle, v: &Value) -> Reply {
+fn progress(app: &AppHandle, v: &Value, device: &pair::Device) -> Reply {
     let Some(id) = v.get("bookId").and_then(|x| x.as_i64()) else { return fail(400, "bookId is needed") };
     let Some(b) = book_row(app, id) else { return fail(404, "No such book") };
     let now = db::now();
-    let Some(incoming) = incoming_place(&b.format, v, now) else { return done() };
+    let Some(mut incoming) = incoming_place(&b.format, v, now) else { return done() };
+    incoming.device = Some(device.name.clone());
+    // the phone's newer place: a question about its earlier one is moot
+    sync::drop_peer_offer(app, id);
     let d = pp::weigh(&b.desk, &incoming, b.peer.as_ref(), now);
     {
         let conn = conn_of(app);
@@ -397,7 +485,7 @@ fn progress(app: &AppHandle, v: &Value) -> Reply {
         }
         Decision::Apply { .. } if !open => take_place(app, id, &incoming.server()),
         // an open book never moves under the reader, and going back is asked: the reader asks
-        Decision::Apply { .. } | Decision::Offer { .. } => sync::offer_from_peer(app, id, incoming.server()),
+        Decision::Apply { .. } | Decision::Offer { .. } => sync::offer_from_peer(app, id, incoming.server(), &device.name),
     }
     let _ = app.emit("library-changed", ());
     done()
@@ -411,7 +499,7 @@ pub fn offer_if_waiting(app: &AppHandle, id: i64) {
     if !b.desk.has_place() && pp::served(&b.desk, Some(p)).map_or(false, |s| s.from_peer) {
         take_place(app, id, &p.server());
     } else if pp::waiting(&b.desk, p) {
-        sync::offer_from_peer(app, id, p.server());
+        sync::offer_from_peer(app, id, p.server(), p.device.as_deref().unwrap_or("Katana"));
     }
 }
 

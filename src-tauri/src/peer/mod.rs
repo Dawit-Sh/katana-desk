@@ -6,14 +6,19 @@
 //! The plan: `projects/katana/2026-11-21-local-sync-plan.md` in Universe.
 
 pub mod api;
+pub mod books;
+pub mod net;
 pub mod pair;
 pub mod place;
+pub mod session;
 
 use crate::db;
 use crate::grimmory::conn_of;
 use crate::grimmory::place::ServerPlace;
 use pair::{Device, Pairing};
 use serde::Serialize;
+use session::{Ended, Kind, PhoneSide, Sync, Syncs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -31,6 +36,12 @@ pub struct Peer {
     pairing: Mutex<Pairing>,
     running: Mutex<Option<Running>>,
     error: Mutex<Option<String>>,
+    /// The last phone's own address (another machine on the network), for the address shown here
+    phone_ip: Mutex<Option<std::net::Ipv4Addr>>,
+    /// Phones syncing now, and the last sync that ended
+    syncs: Mutex<Syncs>,
+    /// Whether the watch that ends quiet syncs is running
+    watching: AtomicBool,
 }
 
 fn peer(app: &AppHandle) -> tauri::State<'_, Peer> {
@@ -62,12 +73,88 @@ pub fn desk_name() -> String {
         .unwrap_or_else(|| "Katana Desk".into())
 }
 
-/// This PC's address on the network it reaches others through (no packet is sent).
-fn lan_address() -> Option<String> {
-    let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    s.connect("192.168.0.1:9").ok()?;
-    let ip = s.local_addr().ok()?.ip();
-    (!ip.is_loopback() && !ip.is_unspecified()).then(|| ip.to_string())
+/// The address a phone on this Wi-Fi reaches this PC on (`net`: the last phone's network first, never a
+/// virtual adapter's such as WSL's, VirtualBox's or a VPN's).
+fn lan_address(app: &AppHandle) -> Option<String> {
+    let phone = *peer(app).phone_ip.lock().unwrap();
+    net::lan_address(phone).map(|ip| ip.to_string())
+}
+
+// ---- syncs (a phone's sync starting and ending, for both apps to show) ----
+
+/// The event the Wi-Fi sync settings and any "syncing" sign listen to: `{"phase": "start" | "end", ...}`.
+pub const SYNC_EVENT: &str = "peer-sync";
+
+#[derive(Serialize, Clone)]
+struct SyncEvent<'a> {
+    phase: &'a str,
+    #[serde(flatten)]
+    sync: SyncShown,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(untagged)]
+enum SyncShown {
+    Going(Sync),
+    Ended(Ended),
+}
+
+fn tell(app: &AppHandle, phase: &str, sync: SyncShown) {
+    let _ = app.emit(SYNC_EVENT, SyncEvent { phase, sync });
+    changed(app);
+}
+
+/// A request from a paired device went through: it's syncing (a sync starts with its first request).
+pub fn touched(app: &AppHandle, device: &Device, kind: Kind) {
+    let started = peer(app).syncs.lock().unwrap().touch(&device.device_id, &device.name, kind, db::now());
+    if let Some(s) = started {
+        tell(app, "start", SyncShown::Going(s));
+    }
+    watch_quiet(app);
+}
+
+/// The phone says its sync starts.
+pub fn sync_started(app: &AppHandle, device: &Device) {
+    let started = peer(app).syncs.lock().unwrap().start(&device.device_id, &device.name, db::now());
+    if let Some(s) = started {
+        tell(app, "start", SyncShown::Going(s));
+    }
+    watch_quiet(app);
+}
+
+/// The phone says its sync ended (with its own side of it).
+pub fn sync_ended(app: &AppHandle, device: &Device, phone: PhoneSide) {
+    let ended = peer(app).syncs.lock().unwrap().end(&device.device_id, phone, db::now());
+    if let Some(e) = ended {
+        tell(app, "end", SyncShown::Ended(e));
+    }
+}
+
+/// While a sync is on, once a second: a phone gone quiet has ended its sync.
+fn watch_quiet(app: &AppHandle) {
+    if peer(app).watching.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    let _ = std::thread::Builder::new().name("katana-peer-syncs".into()).spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let st = peer(&app);
+        let (ended, idle) = {
+            let mut s = st.syncs.lock().unwrap();
+            let ended = s.expire(db::now());
+            (ended, s.open().is_empty())
+        };
+        for e in ended {
+            tell(&app, "end", SyncShown::Ended(e));
+        }
+        if idle {
+            st.watching.store(false, Ordering::SeqCst);
+            // a sync that started in the moment between keeps this watch (unless another took it up)
+            if st.syncs.lock().unwrap().open().is_empty() || st.watching.swap(true, Ordering::SeqCst) {
+                return;
+            }
+        }
+    });
 }
 
 /// At start: the server runs if he left it on.
@@ -152,6 +239,10 @@ pub struct PeerStatus {
     code: Option<String>,
     code_until: Option<i64>,
     devices: Vec<Device>,
+    /// Phones syncing now
+    syncing: Vec<Sync>,
+    /// The last sync that ended (since this PC's app started)
+    last_sync: Option<Ended>,
 }
 
 fn status_of(app: &AppHandle) -> PeerStatus {
@@ -160,16 +251,22 @@ fn status_of(app: &AppHandle) -> PeerStatus {
     let code = st.pairing.lock().unwrap().current(now);
     let running = st.running.lock().unwrap().is_some();
     let error = st.error.lock().unwrap().clone();
+    let (syncing, last_sync) = {
+        let s = st.syncs.lock().unwrap();
+        (s.open(), s.last.clone())
+    };
     PeerStatus {
         enabled: enabled(app),
         running,
         error,
         port: PORT,
         name: desk_name(),
-        address: lan_address(),
+        address: lan_address(app),
         code: code.as_ref().map(|c| c.0.clone()),
         code_until: code.map(|c| c.1),
         devices: pair::devices(&conn_of(app)),
+        syncing,
+        last_sync,
     }
 }
 
@@ -211,6 +308,7 @@ pub fn peer_pair_close(app: AppHandle) -> PeerStatus {
 #[tauri::command]
 pub fn peer_forget(app: AppHandle, device_id: String) -> PeerStatus {
     let _ = pair::forget(&conn_of(&app), &device_id);
+    peer(&app).syncs.lock().unwrap().forget(&device_id);
     status_of(&app)
 }
 
