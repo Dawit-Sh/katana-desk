@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod covers;
+mod dashboard;
 mod db;
 mod dict;
 mod grimmory;
@@ -127,7 +128,28 @@ fn add_reading(lib: State<Library>, seconds: i64, book_id: Option<i64>, pages: O
     let now = chrono::Local::now();
     let day = now.format("%Y-%m-%d").to_string();
     let conn = lib.db.0.lock().unwrap();
-    db::add_reading(&conn, &day, now.hour(), book_id, seconds.clamp(0, 600), pages.unwrap_or(0).clamp(0, 200)).map_err(err)
+    let seconds = seconds.clamp(0, 600);
+    db::add_reading(&conn, &day, now.hour(), book_id, seconds, pages.unwrap_or(0).clamp(0, 200)).map_err(err)?;
+    if let Some(b) = book_id {
+        // the pace Local's dashboard tells the time left by
+        dashboard::add_pace(&conn, b, seconds).map_err(err)?;
+    }
+    Ok(())
+}
+
+/// What Local's reading dashboard needs beyond the library: last marks, time left, places from a paired
+/// device, books set aside, finished books.
+#[tauri::command]
+fn local_dashboard(lib: State<Library>) -> Res<dashboard::Dashboard> {
+    let conn = lib.db.0.lock().unwrap();
+    dashboard::dashboard(&conn).map_err(err)
+}
+
+/// Set aside: off the dashboard until the book is opened again (or put back).
+#[tauri::command]
+fn book_set_aside(lib: State<Library>, id: i64, on: bool) -> Res<()> {
+    let conn = lib.db.0.lock().unwrap();
+    dashboard::set_aside(&conn, id, on, db::now()).map_err(err)
 }
 
 #[derive(Serialize)]
@@ -785,6 +807,8 @@ pub fn run() {
             save_progress,
             mark_opened,
             add_reading,
+            local_dashboard,
+            book_set_aside,
             reading_days,
             get_setting,
             set_setting,
