@@ -1,0 +1,132 @@
+/* Local's reading dashboard (direction A, 2026-11-24): the band on top of Local, the smaller folder cards
+   with the books being read in each, and the author under every cover. Books sit straight on the library
+   ground, no boxes (his rule, 2026-11-20). */
+
+/* ---------- the band ---------- */
+.band { display: grid; gap: 16px; container: band / inline-size }
+.bandh { display: flex; align-items: center; gap: 12px; min-width: 0 }
+.bandh .lbl, .bandf .lbl { font-size: 17px; font-weight: 600; white-space: nowrap }
+.bandh .sp, .bandf .sp { flex: 1 }
+.band .su, .bandf .su { font-size: 12.5px; color: var(--k-var) }
+.band .pill.sm, .bandf .pill.sm { height: 28px; padding: 0 12px; font-size: 12.5px; gap: 6px }
+.band .pill.sm .ms, .bandf .pill.sm .ms { font-size: 16px }
+.band .pill:disabled, .bandf .pill:disabled { opacity: .5; pointer-events: none }
+
+.bandg { display: grid; grid-template-columns: auto minmax(0, 1fr) 340px; gap: 26px 44px; align-items: start }
+.bandg.scoped { grid-template-columns: auto minmax(0, 400px); gap: 26px 72px; justify-content: start }
+.bandg .none { color: var(--k-var); font-size: 14px; padding: 8px 0 }
+
+/* the last book read */
+.band .lead { display: flex; gap: 22px; align-items: flex-start; min-width: 0 }
+.band .lead .lcv { flex: none; border-radius: 6px }
+.band .lead .rct { display: flex; flex-direction: column; gap: 6px; min-width: 0; width: 360px; flex: none }
+.band .lead .ti { font-size: 26px; line-height: 1.2 }
+.band .lead .au { font-size: 14px; color: var(--k-var); margin-top: -2px }
+.band .lead .where { font-size: 13.5px; margin-top: 6px; display: flex; gap: 8px; align-items: center; min-width: 0 }
+.band .lead .where span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.band .lead .where .pct { margin-left: auto; color: var(--k-var); font-variant-numeric: tabular-nums; flex: none }
+.band .lead .pbar { width: 100%; margin-top: 0 }
+.band .lead .left { font-size: 12.5px; color: var(--k-var) }
+.band .fchip { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: var(--k-sc); font-size: 12.5px; color: var(--k-var); white-space: nowrap; max-width: 100% }
+.band .fchip .ms { font-size: 16px }
+.band .lastmk { border-left: 3px solid var(--k-tint); padding: 1px 0 1px 12px; display: grid; gap: 3px; margin-top: 6px; min-width: 0 }
+.band .lastmk small { font-size: 11.5px; color: var(--k-var) }
+.band .lastmk span { font-family: var(--font-book); font-size: 14.5px; line-height: 1.45; overflow-wrap: anywhere }
+.band .lead .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap }
+
+/* the other open books */
+.band .others { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 24px 28px; align-content: start; min-width: 0 }
+.band .dri { display: flex; gap: 14px; align-items: flex-start; min-width: 0; width: 100%; text-align: left; border-radius: 8px }
+.band .dri .rct { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 }
+.band .dri .wh { font-size: 12px; color: var(--k-var); white-space: nowrap; overflow: hidden; display: flex; align-items: center; gap: 4px }
+.band .dri .t2 { font-family: var(--font-book); font-size: 16px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.band .dri .a2 { font-size: 12.5px; color: var(--k-var); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.band .dri .m2 { font-size: 12.5px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.band .dri .pbar { width: 100%; max-width: 200px; height: 3px; margin-top: 3px }
+.band .tchip { display: inline-flex; align-items: center; height: 20px; padding: 0 9px; border-radius: 999px; background: var(--k-tintc); color: var(--k-tint); font-size: 11px; font-weight: 600; align-self: flex-start; margin-top: 5px; white-space: nowrap }
+.band .dev { display: inline-flex; align-items: center; gap: 3px; color: var(--k-tint); font-weight: 600 }
+.band .dev .ms { font-size: 14px }
+.band .moreo { display: flex; align-items: center; gap: 6px; color: var(--k-var); font-size: 13.5px; font-weight: 600; height: 84px; padding: 0 8px; border-radius: 8px; justify-self: start }
+.band .moreo:hover, .band .lnk:hover { color: var(--k-on) }
+
+/* the column on the right: gone quiet, Reading next, new in your folders (inside a folder: this folder) */
+.band .catch { border-left: 1px solid color-mix(in srgb, var(--k-outv) 60%, transparent); padding-left: 32px; display: grid; gap: 24px; align-content: start; min-width: 0 }
+.band .dcs { display: grid; gap: 10px; min-width: 0; align-content: start }
+.band .dcsh { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600 }
+.band .dcsh .ms { font-size: 18px; color: var(--k-var) }
+.band .dcsh .su { font-weight: 500; margin-left: auto; font-size: 12px }
+.band .qrow { display: flex; gap: 12px; align-items: flex-start; min-width: 0 }
+.band .qrow .qcv { flex: none; border-radius: 4px }
+.band .qrow .cv.xs { width: 32px; height: 48px }
+.band .qrow .rct { flex: 1; min-width: 0; display: grid; gap: 2px }
+.band .qt { font-family: var(--font-book); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.band .qa { font-size: 12px; color: var(--k-var); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.band .qm { font-size: 12px; color: var(--k-dim) }
+.band .qrow .acts { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap }
+.band .lnk { justify-self: start; font-size: 12.5px; color: var(--k-var); padding: 2px 0 }
+.band .dundo { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--k-var); min-width: 0 }
+.band .dundo span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0 }
+.band .dmini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px }
+.band .mb { display: grid; gap: 4px; min-width: 0; width: 100%; align-content: start; justify-items: start; text-align: left; border-radius: 6px }
+.band .mb .cv.s { width: 52px; height: 78px }
+.band .mb .t3 { font-family: var(--font-book); font-size: 12.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px }
+.band .mb .a3 { font-size: 11.5px; color: var(--k-var); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100% }
+.band .newrow { display: flex; gap: 8px; flex-wrap: wrap }
+.band .ncv { border-radius: 3px }
+.band .newrow .cv.xs { width: 30px; height: 45px }
+.band .catch .big { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1 }
+.band .catch .big small { font-size: 14px; font-weight: 500; color: var(--k-var); margin-left: 6px }
+.pbar.tint i { background: var(--k-tint) }
+.band .unk, .bandf .unk { color: var(--k-dim) }
+
+.band .lcv:focus-visible, .band .dri:focus-visible, .band .qcv:focus-visible, .band .mb:focus-visible, .band .ncv:focus-visible, .band .moreo:focus-visible, .band .lnk:focus-visible, .band .fcv:focus-visible {
+  outline: 2px solid var(--k-pri); outline-offset: 3px }
+
+/* narrower: the column drops under the band, then the band stacks */
+@container band (max-width: 1500px) {
+  .band .bandg:not(.scoped) { grid-template-columns: auto minmax(0, 1fr) }
+  .band .bandg:not(.scoped) > .catch { grid-column: 1 / -1; border-left: 0; padding-left: 0; border-top: 1px solid color-mix(in srgb, var(--k-outv) 60%, transparent); padding-top: 18px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px }
+}
+@container band (max-width: 1000px) {
+  .band .bandg.bandg { grid-template-columns: minmax(0, 1fr) }
+  .band .bandg.bandg > .catch { grid-column: 1 / -1; border-left: 0; padding-left: 0; border-top: 1px solid color-mix(in srgb, var(--k-outv) 60%, transparent); padding-top: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px }
+  .band .lead .rct.rct { width: auto; flex: 1 1 auto }
+}
+@container band (max-width: 620px) {
+  .band .bandg.bandg > .catch { grid-template-columns: minmax(0, 1fr) }
+  .band .lead .lcv .cv.l { width: 72px; height: 108px; padding: 7px 6px }
+}
+
+/* folded with Hide: one line */
+.bandf { display: flex; align-items: center; gap: 14px; padding: 2px 0 14px; border-bottom: 1px solid color-mix(in srgb, var(--k-outv) 60%, transparent); min-width: 0; flex-wrap: wrap }
+.bandf .fcv { border-radius: 3px }
+.bandf .cv.xs { width: 28px; height: 42px }
+.bandf .t2 { font-family: var(--font-book); font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px }
+.bandf .pbar { width: 160px; margin-top: 0 }
+
+/* ---------- the folders, a quarter smaller, with the books being read in each ---------- */
+.glabel .gc { font-weight: 500; margin-left: 8px }
+.folders { gap: 24px 22px; align-items: flex-start }
+.folders .fbtn { width: 132px; gap: 6px; align-content: start }
+.folders .fold { width: 112px; height: 78px; margin-top: 11px }
+.folders .fold .back { border-radius: 3px 10px 10px 10px }
+.folders .fold .back::before { top: -9px; width: 44px; height: 11px; border-radius: 7px 7px 0 0 }
+.folders .fold .peek { bottom: 19px; width: 33px; height: 50px; padding: 4px 3px }
+.folders .fold .peek b { font-size: 5px }
+.folders .fold .peek s { font-size: 3px }
+.folders .fold .peek.a { left: 20px }
+.folders .fold .peek.b { left: 48px }
+.folders .fold .peek .pr { position: absolute; left: 4px; right: 4px; top: 21px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, .35); z-index: 2 }
+.folders .fold .peek .pr i { position: absolute; left: 0; top: 0; bottom: 0; background: #fff; border-radius: 1px }
+.folders .fold .front { height: 39px; border-radius: 5px 5px 10px 10px }
+.folders .fname { max-width: 132px; font-size: 13.5px }
+.folders .fcount { max-width: 132px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -5px }
+.frl { display: grid; gap: 6px; width: 132px; margin-top: 3px }
+.frl .r { display: grid; gap: 3px; min-width: 0 }
+.frl .rl { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; min-width: 0 }
+.frl .rl span:first-child { font-family: var(--font-book); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; text-align: left }
+.frl .rl span:last-child { color: var(--k-var); font-variant-numeric: tabular-nums; flex: none }
+.frl .pbar { height: 2px; margin-top: 0 }
+.frl .r.q .rl span:first-child { color: var(--k-var) }
+.frl .r.q .pbar i { background: var(--k-dim) }
+.frl .more { font-size: 11.5px; color: var(--k-dim); text-align: left }

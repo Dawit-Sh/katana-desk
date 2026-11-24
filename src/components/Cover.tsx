@@ -72,19 +72,25 @@ export function Cover({ book, size = "", progress = true }: Props) {
   );
 }
 
-/** A small book peeking out of a folder tile. */
-export function Peek({ book, side }: { book: Book; side: "a" | "b" }) {
+/** A small book peeking out of a folder tile; one being read shows how far (`progress`). */
+export function Peek({ book, side, progress = false }: { book: Book; side: "a" | "b"; progress?: boolean }) {
   const custom = useCustom([bookKey(book), `b:${book.id}`]);
+  const frac = book.fraction ?? 0;
+  const pr = progress && frac > 0.004 && frac < 0.995 && (
+    <span className="pr"><i style={{ width: `${Math.round(frac * 100)}%` }} /></span>
+  );
   if (custom || book.cover)
     return (
       <span className={`peek ${side}`}>
         <img src={fileUrl(custom ?? book.cover!)} alt="" loading="lazy" draggable={false} />
+        {pr}
       </span>
     );
   return (
     <span className={`peek ${side}`} style={coverColors(book)}>
       <b>{book.title}</b>
       <s>{book.author ?? ""}</s>
+      {pr}
     </span>
   );
 }

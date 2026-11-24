@@ -272,6 +272,8 @@ impl Db {
             // sync on this Wi-Fi: a phone's place per book and the paired devices, additive only
             conn.execute_batch(crate::peer::pair::SCHEMA_V11)?;
         }
+        // Local's reading dashboard: made on every start, so it needs no schema version
+        conn.execute_batch(crate::dashboard::SCHEMA)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db(Mutex::new(conn)))
     }

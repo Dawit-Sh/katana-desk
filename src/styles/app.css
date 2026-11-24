@@ -131,12 +131,15 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .crumbs .ms { color: var(--k-dim); font-size: 18px }
 .glabel { font-size: 13px; font-weight: 600; color: var(--k-var); margin-bottom: -6px }
 .grid { display: flex; flex-wrap: wrap; gap: 22px 16px; align-content: flex-start }
-.bk { display: flex; flex-direction: column; gap: 6px; width: 162px; padding: 6px; margin: -6px; outline: none; content-visibility: auto; contain-intrinsic-size: 162px 284px }
+.bk { display: flex; flex-direction: column; gap: 6px; width: 162px; padding: 6px; margin: -6px; outline: none; content-visibility: auto; contain-intrinsic-size: 162px 302px }
 .bt { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-book); font-size: 13px; gap: 4px }
 .bt span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .bt button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; color: var(--k-var); flex: none }
 .bt button:hover { background: var(--k-cap-hover) }
 .bt .ms { font-size: 18px }
+/* under every cover: the title, the author (his note, 2026-11-24), then how far */
+.ba { font-size: 12px; color: var(--k-var); margin-top: -5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ba.unk { color: var(--k-dim) }
 .bm { font-size: 11.5px; color: var(--k-var); margin-top: -5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 .bk.sel .cv { outline: 3px solid var(--k-pri); outline-offset: 3px }
 .bk:focus-visible .cv { outline: 3px solid var(--k-pri); outline-offset: 3px }
