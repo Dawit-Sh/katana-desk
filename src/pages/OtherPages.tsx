@@ -20,7 +20,7 @@ import { AaPanel } from "../reader/AaPanel";
 import { BUILT_IN, loadUiFonts, normalise, saveDefaultPrefs, type Prefs } from "../reader/prefs";
 
 type Section = "general" | "appearance" | "reading" | "sources" | "dictionaries" | "sync" | "keyboard" | "about";
-const SECTIONS: { id: Section; icon: string; name: string; about: string }[] = [
+export const SECTIONS: { id: Section; icon: string; name: string; about: string }[] = [
   { id: "general", icon: "tune", name: "General", about: "How Katana Desk starts, and how big everything is." },
   { id: "appearance", icon: "palette", name: "Appearance", about: "Themes, cover sizes and the glass behind the sidebar." },
   { id: "reading", icon: "menu_book", name: "Reading defaults", about: "Your daily goal, and how a book looks when it has no settings of its own." },
@@ -554,12 +554,13 @@ function About() {
 }
 
 export function SettingsPage() {
+  // the section lives in the store (Settings › Sources from the sidebar, and Back between sections)
   const at = useStore((s) => s.settingsAt) as Section | null;
-  const [sec, setSec] = useState<Section>(() => (at && SECTIONS.some((x) => x.id === at) ? at : useUpdates.getState().phase === "found" ? "about" : "general"));
-  // Add a server in the sidebar while Settings is open
-  useEffect(() => {
-    if (at && SECTIONS.some((x) => x.id === at)) setSec(at);
-  }, [at]);
+  const [first] = useState<Section>(() => (useUpdates.getState().phase === "found" ? "about" : "general"));
+  const sec: Section = at && SECTIONS.some((x) => x.id === at) ? at : first;
+  const setSec = (id: Section) => {
+    if (id !== sec) useStore.getState().goSettings(id);
+  };
   const here = SECTIONS.find((x) => x.id === sec) ?? SECTIONS[0];
   return (
     <div className="setp">

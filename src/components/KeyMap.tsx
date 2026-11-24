@@ -18,6 +18,7 @@ export const SECTIONS: Section[] = [
       { what: "This keyboard map", keys: ["?", "Ctrl /"] },
       { what: "App size (outside a book)", keys: ["Ctrl +", "Ctrl −", "Ctrl 0"] },
       { what: "Full screen", keys: ["F11"] },
+      { what: "Back to where you were", keys: ["Alt ←", "the mouse's back button"] },
     ],
   },
   {

@@ -160,7 +160,9 @@
 .km-k { display: inline-flex; gap: 3px }
 .km-m { font-size: 12px; color: var(--k-var); white-space: nowrap }
 .km-or { font-size: 11px; color: var(--k-dim) }
-.km-settings { padding: 16px 20px }
+.km-settings { padding: 18px 22px }
+.km-settings .km-row { padding: 7px 0 }
+.km-settings .km-list h3 { margin-bottom: 8px }
 
 /* Change cover */
 .cd-scrim { align-items: center; padding-top: 16px }
@@ -243,6 +245,11 @@
 .sethead p { margin: 2px 0 0; color: var(--k-var); font-size: 14px }
 .setbody .glab { margin: 14px 0 0; font-size: 13px; font-weight: 600; color: var(--k-var); letter-spacing: .02em }
 .setbody .grp { padding: 4px 0 }
+/* boxes that hold their own content keep room on every side (2026-11-24: the keyboard map's words touched
+   the box's edges, because the rule above beat their padding) */
+.setbody .grp.km-settings { padding: 18px 22px }
+.setbody .grp.csizes { padding: 12px 16px }
+.setbody .grp.aa-settings { padding: 12px 22px 18px }
 .srow.tight { min-height: 0; padding-bottom: 4px }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 20px 16px }
 .chip { height: 34px; border-radius: 17px; padding: 0 16px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--k-outv); font-size: 13.5px; color: var(--k-on) }

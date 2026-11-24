@@ -7,6 +7,7 @@ import { api, grimmory, READABLE, type Dl, type GStatus, type ScanState } from "
 import { useStore } from "./lib/store";
 import { TitleBar } from "./components/TitleBar";
 import { Rail, Sidebar } from "./components/Sidebar";
+import { BackBar } from "./components/BackBar";
 import { LocalPage, addBooks } from "./pages/LocalPage";
 import { SettingsPage, stepAppZoom } from "./pages/OtherPages";
 import { JournalPage } from "./pages/JournalPage";
@@ -288,7 +289,10 @@ export function App() {
                 <Sidebar drawer onPick={() => setDrawer(false)} />
               </>
             )}
-            <main className="main">{pageView}</main>
+            <main className="main">
+              <BackBar />
+              <div className="pagebox">{pageView}</div>
+            </main>
           </div>
         </>
       )}

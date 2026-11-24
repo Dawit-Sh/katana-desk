@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { MAX_STEPS, spotOf, stepsAfterMove, type BackStep } from "./spots";
 import { api, covers, grimmory, lists, type Book, type Catalog, type Dl, type Folder, type GBook, type GStatus, type List, type ScanState } from "./api";
 
 export type Page = "grimmory" | "local" | "lists" | "bookmarks" | "words" | "journal" | "settings";
@@ -11,6 +12,8 @@ export type CoverTarget = { key: string; bookId: number | null; grimmoryId: numb
 export type Place = { folderId: number | null; sub: string[] };
 
 export type GSort = "lastRead" | "added" | "title" | "author";
+
+
 /** Which Grimmory books show: all, a library, a shelf or magic shelf, and how far read. */
 export type GFilter = { kind: "all" | "library" | "shelf" | "magic"; id?: number; status: "any" | "reading" | "unread" | "read" };
 
@@ -40,6 +43,16 @@ type State = {
   gView: "grid" | "list";
   /** a Grimmory book to open as soon as its download is done */
   openWhenHere: number | null;
+  /** the list open on the Lists page (null: the first) */
+  listSel: number | null;
+  setListSel: (id: number | null) => void;
+  /** Back: the steps taken, newest last */
+  backSteps: BackStep[];
+  goBack: () => void;
+  /** a panel opened on a page (a review, two reads side by side): Back closes it */
+  pushBack: (key: string, close: () => void) => void;
+  /** the panel closed by itself: its step goes */
+  dropBack: (key: string) => void;
   reload: () => Promise<void>;
   reloadCatalog: () => Promise<void>;
   setG: (g: GStatus) => void;
@@ -89,7 +102,15 @@ type State = {
 };
 export type BookMenuAt = { x: number; y: number; local?: Book; g?: GBook };
 
-export const useStore = create<State>((set, get) => ({
+export const useStore = create<State>((set, get) => {
+  /** Changes where you are, keeping a step for Back. */
+  const move = (patch: Partial<State>) => {
+    const before = get();
+    const from = spotOf(before);
+    const to = spotOf({ ...before, ...patch } as State);
+    set({ ...patch, backSteps: stepsAfterMove(before.backSteps, from, to) });
+  };
+  return {
   folders: [],
   books: [],
   scan: { scanning: false, lastScan: null, done: 0, total: 0 },
@@ -115,6 +136,22 @@ export const useStore = create<State>((set, get) => ({
   gFilter: { kind: "all", status: "any" },
   gView: "grid",
   openWhenHere: null,
+  listSel: null,
+  setListSel: (listSel) => move({ listSel }),
+  backSteps: [],
+  goBack: () => {
+    const steps = get().backSteps;
+    const top = steps[steps.length - 1];
+    if (!top) return;
+    set({ backSteps: steps.slice(0, -1) });
+    if ("spot" in top) set({ ...top.spot, menu: null });
+    else top.close();
+  },
+  pushBack: (key, close) => set({ backSteps: [...get().backSteps.filter((s) => !("key" in s) || s.key !== key), { key, close }].slice(-MAX_STEPS) }),
+  dropBack: (key) => {
+    const steps = get().backSteps;
+    if (steps.some((s) => "key" in s && s.key === key)) set({ backSteps: steps.filter((s) => !("key" in s) || s.key !== key) });
+  },
   reloadCatalog: async () => {
     const catalog = await grimmory.catalog();
     const { gSelected } = get();
@@ -133,12 +170,12 @@ export const useStore = create<State>((set, get) => ({
       get().reload().then(() => get().open(localId));
     }
   },
-  gSelect: (id, sheet = true) => set({ gSelected: id, gSheet: id != null && sheet }),
+  gSelect: (id, sheet = true) => move({ gSelected: id, gSheet: id != null && sheet }),
   setGSort: (gSort) => {
     set({ gSort });
     api.setSetting("grimmorySort", gSort);
   },
-  setGFilter: (gFilter) => set({ gFilter }),
+  setGFilter: (gFilter) => move({ gFilter }),
   setGView: (gView) => {
     set({ gView });
     api.setSetting("grimmoryView", gView);
@@ -165,12 +202,12 @@ export const useStore = create<State>((set, get) => ({
   },
   setScan: (scan) => set({ scan }),
   go: (page) =>
-    set({ page, sheetOpen: false, gSheet: false, journalDay: null, settingsAt: null, query: page === "local" || page === "grimmory" ? get().query : "" }),
-  goJournalDay: (journalDay) => set({ page: "journal", journalDay, sheetOpen: false, gSheet: false, query: "" }),
-  goSettings: (settingsAt) => set({ page: "settings", settingsAt, sheetOpen: false, gSheet: false, query: "" }),
-  goPlace: (place) => set({ place, page: "local", query: "" }),
-  select: (id, sheet = true) => set({ selectedId: id, sheetOpen: id != null && sheet }),
-  closeSheet: () => set({ sheetOpen: false }),
+    move({ page, sheetOpen: false, gSheet: false, journalDay: null, settingsAt: null, query: page === "local" || page === "grimmory" ? get().query : "" }),
+  goJournalDay: (journalDay) => move({ page: "journal", journalDay, sheetOpen: false, gSheet: false, query: "" }),
+  goSettings: (settingsAt) => move({ page: "settings", settingsAt, sheetOpen: false, gSheet: false, query: "" }),
+  goPlace: (place) => move({ place, page: "local", query: "" }),
+  select: (id, sheet = true) => move({ selectedId: id, sheetOpen: id != null && sheet }),
+  closeSheet: () => move({ sheetOpen: false }),
   open: (id, at = null) => set({ readingId: id, selectedId: id, openAt: at }),
   closeReader: () => {
     set({ readingId: null, openAt: null });
@@ -179,7 +216,7 @@ export const useStore = create<State>((set, get) => ({
   // the search covers the source you're in (Grimmory or Local); from other pages, Grimmory when signed in
   setQuery: (query) => {
     const { page, g } = get();
-    set({ query, page: page === "local" || page === "grimmory" ? page : g?.signedIn ? "grimmory" : "local" });
+    move({ query, page: page === "local" || page === "grimmory" ? page : g?.signedIn ? "grimmory" : "local" });
   },
   setThemePref: (themePref) => {
     set({ themePref });
@@ -212,7 +249,8 @@ export const useStore = create<State>((set, get) => ({
   bookWindow: false,
   menu: null,
   setMenu: (menu) => set({ menu }),
-}));
+  };
+});
 
 // dev builds only: lets test runs over the debug port open a book by id
 if (import.meta.env.DEV) (window as unknown as { __katana: unknown }).__katana = { open: (id: number, at?: string | null) => useStore.getState().open(id, at ?? null) };

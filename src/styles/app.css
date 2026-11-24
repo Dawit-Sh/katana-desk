@@ -103,7 +103,17 @@ kbd { font: 500 11px var(--font-ui); border: 1px solid var(--k-outv); border-rad
 .drawer-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .4); z-index: 15 }
 .side.drawer { position: absolute; left: 0; top: 0; bottom: 0; z-index: 16; background: var(--k-side); box-shadow: 0 16px 44px var(--k-shadow); border-radius: 0 28px 28px 0 }
 
-.main { flex: 1; min-width: 0; background: var(--k-bg); border-top-left-radius: 12px; position: relative; overflow: hidden; display: flex }
+.main { flex: 1; min-width: 0; background: var(--k-bg); border-top-left-radius: 12px; position: relative; overflow: hidden; display: flex; flex-direction: column }
+/* the page under the Back bar: it fills the rest, and its book pages (.sheet) sit inside it */
+.pagebox { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative }
+/* ← Back, at the top left of every page once there's somewhere to go back to (2026-11-24) */
+.backbar { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 24px 0; min-width: 0 }
+.backbtn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px 0 10px; border-radius: 999px; background: var(--k-sch); color: var(--k-on); font-size: 13.5px; font-weight: 600; flex: none }
+.backbtn:hover { background: var(--k-schh) }
+.backbtn:focus-visible { outline: 2px solid var(--k-pri); outline-offset: 2px }
+.backbtn .ms { font-size: 18px }
+.backbar .where { font-size: 13px; color: var(--k-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.backbar .where b { color: var(--k-on); font-weight: 600 }
 .body.drawer-mode .main { border-top-left-radius: 0 }
 .scroll { flex: 1; min-width: 0; overflow: auto; padding: 24px 24px 32px; display: flex; flex-direction: column; gap: 16px; transition: margin-right .2s }
 .scroll.with-sheet { margin-right: 412px }

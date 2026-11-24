@@ -52,7 +52,9 @@ const GHOSTS = [
 export function ListsPage() {
   const all = useStore((s) => s.lists);
   const loadLists = useStore((s) => s.loadLists);
-  const [sel, setSel] = useState<number | null>(null);
+  // the open list lives in the store, so Back can come back to it
+  const sel = useStore((s) => s.listSel);
+  const setSel = useStore((s) => s.setListSel);
   const [naming, setNaming] = useState<number | "new" | null>(null);
   const [name, setName] = useState("");
   const [undo, setUndo] = useState<List | null>(null);

@@ -17,6 +17,7 @@ import { plural } from "../lib/format";
 import { useStore } from "../lib/store";
 import { MarkRows, Tabs, allMarks, inTab, logRevisit, matches, type Mark, type Tab } from "../reader/marklist";
 import { exportMarkdown, hls, marks as bms, marksApi, type Bookmark, type Highlight, type MarkedBook, type MarksSync } from "../reader/marks";
+import { useBackClose } from "../lib/back";
 
 const counts = (b: MarkedBook) =>
   [b.bookmarks ? plural(b.bookmarks, "bookmark") : "", b.highlights ? plural(b.highlights, "highlight") : "", b.notes ? plural(b.notes, "note") : ""]
@@ -46,6 +47,7 @@ export function BookmarksPage() {
   const [folded, setFolded] = useState<Set<number>>(new Set());
   const [readOf, setReadOf] = useState<Record<number, number>>({});
   const [diffFor, setDiffFor] = useState<number | null>(null);
+  useBackClose("reads-diff", diffFor != null, () => setDiffFor(null));
   useEffect(() => {
     api.getSetting("bookmarks.folded").then((v) => v && setFolded(new Set(JSON.parse(v) as number[]))).catch(() => {});
   }, []);

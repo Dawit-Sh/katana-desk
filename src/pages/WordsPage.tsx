@@ -12,6 +12,7 @@ import { Review } from "../components/Review";
 import { WordGraph } from "../components/WordGraph";
 import { SentenceQ, wordMatches } from "../reader/wordlist";
 import { dict, exportWords, isDue, learning, words, type Lookup, type Word } from "../lib/words";
+import { useBackClose } from "../lib/back";
 
 type View = "list" | "graph";
 
@@ -118,6 +119,7 @@ export function WordsPage() {
   const [book, setBook] = useState<number | "all">("all");
   const [openId, setOpenId] = useState<number | null>(null);
   const [review, setReview] = useState<false | true | Word>(false);
+  useBackClose("words-review", review !== false, () => setReview(false));
   const [msg, setMsg] = useState<{ text: string; undo?: () => void } | null>(null);
   const [view, setView] = useState<View | null>(null);
   const [version, setVersion] = useState(0);
