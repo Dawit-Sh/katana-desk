@@ -3,7 +3,8 @@
 // quiet, Reading next and books new in your folders. Inside a folder it speaks of that folder. Hide folds
 // it to one line. Nothing here repeats the Journal (no heat map, charts or hour totals).
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { api, grimmory, m7, READABLE, type Book, type Folder } from "../lib/api";
+import { api, m7, READABLE, type Book, type Folder } from "../lib/api";
+import { setAside } from "../lib/undoable";
 import { useStore } from "../lib/store";
 import {
   cut, finished, leftText, nearText, readingNext, newThisWeek, whenLower, whenText, type Dash, type Extra, type Reading,
@@ -25,6 +26,12 @@ export function useDash(): [Dash | null, () => void] {
       on = false;
     };
   }, [books, n]);
+  // Set aside, and its undo and redo (Ctrl Z, the undo bar), change the band without changing the library
+  useEffect(() => {
+    const again = () => setN((k) => k + 1);
+    window.addEventListener("katana-aside", again);
+    return () => window.removeEventListener("katana-aside", again);
+  }, []);
   return [d, () => setN((k) => k + 1)];
 }
 
@@ -194,7 +201,6 @@ export function ReadingBand({ books, r, dash, reload, folders, scope }: Props) {
   const [folded, setFolded] = useFolded();
   const [allOpen, setAllOpen] = useState(false);
   const [allQuiet, setAllQuiet] = useState(false);
-  const [undo, setUndo] = useState<Book | null>(null);
   const [othersEl, setOthersEl] = useState<HTMLDivElement | null>(null);
   const slots = useSlots(othersEl);
   const now = Date.now();
@@ -219,24 +225,8 @@ export function ReadingBand({ books, r, dash, reload, folders, scope }: Props) {
     const top = folders.length === 1 && b.relDir ? [b.relDir.split("/")[0]] : [];
     goPlace({ folderId: b.folderId, sub: top });
   };
-  const aside = async (b: Book) => {
-    try {
-      await api.setAside(b.id, true);
-      if (b.grimmoryId != null) grimmory.setStatus(b.grimmoryId, "PAUSED").catch(() => {});
-      setUndo(b);
-      reload();
-    } catch {
-      /* the book stays where it is */
-    }
-  };
-  const unAside = async () => {
-    if (!undo) return;
-    const b = undo;
-    setUndo(null);
-    await api.setAside(b.id, false).catch(() => {});
-    if (b.grimmoryId != null) grimmory.setStatus(b.grimmoryId, "READING").catch(() => {});
-    reload();
-  };
+  // the undo bar says "Set aside" with the title, and Ctrl Z puts it back (src/lib/undoable.ts)
+  const aside = (b: Book) => setAside(b).catch(() => reload());
 
   const counts = scope
     ? [r.open.length && `${r.open.length} open`, `${done.length} of ${books.length.toLocaleString("en-US")} read`]
@@ -281,12 +271,6 @@ export function ReadingBand({ books, r, dash, reload, folders, scope }: Props) {
           {allQuiet ? "Show fewer" : `${r.quiet.length - 2} more gone quiet ›`}
         </button>
       )}
-    </div>
-  );
-  const undoLine = undo && (
-    <div className="dundo">
-      <span>Set aside: {undo.title}</span>
-      <button type="button" className="pill sm" onClick={unAside}>Undo</button>
     </div>
   );
   const nextBox = next.length > 0 && (
@@ -347,7 +331,6 @@ export function ReadingBand({ books, r, dash, reload, folders, scope }: Props) {
             </div>
           )}
           {quiet}
-          {undoLine}
           {nextBox}
           {fresh && fresh.books.length > 0 && (
             <div className="dcs nw">

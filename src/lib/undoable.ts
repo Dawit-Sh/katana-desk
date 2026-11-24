@@ -332,3 +332,31 @@ export function statusChanged(c: StatusChange) {
     redo: () => setStatus(c, c.to, null),
   });
 }
+
+// ---------- Local's reading dashboard ----------
+
+/** The reading band reads its books again after a set aside, an undo or a redo (src/components/ReadingBand.tsx). */
+const asideChanged = () => window.dispatchEvent(new Event("katana-aside"));
+
+/** Set aside on Local's reading band: off the band until the book is opened again, and Paused on Grimmory for
+ *  a Grimmory book. Undo puts it back on the band, and its Grimmory status back to what it was. */
+export async function setAside(b: { id: number; title: string; grimmoryId: number | null }) {
+  const was = b.grimmoryId != null ? useStore.getState().catalog.books.find((g) => g.id === b.grimmoryId)?.readStatus ?? null : null;
+  const on = async () => {
+    await api.setAside(b.id, true);
+    if (b.grimmoryId != null) await grimmory.setStatus(b.grimmoryId, "PAUSED").catch(() => {});
+    asideChanged();
+  };
+  await on();
+  record({
+    label: "Set aside",
+    back: "Back on the reading band",
+    detail: b.title,
+    undo: async () => {
+      await api.setAside(b.id, false);
+      if (b.grimmoryId != null && was && was !== "PAUSED") await grimmory.setStatus(b.grimmoryId, was).catch(() => {});
+      asideChanged();
+    },
+    redo: on,
+  });
+}
